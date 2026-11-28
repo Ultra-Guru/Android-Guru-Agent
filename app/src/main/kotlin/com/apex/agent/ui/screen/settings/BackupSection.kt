@@ -163,12 +163,15 @@ class BackupViewModel @Inject constructor(
         }
     }
 
-    /** 导入结果 → 多行本地化文案；设置恢复成功附加「重启后完全生效」提示。 */
+    /**
+     * 导入结果 → 多行本地化文案；设置恢复成功附「已立即生效」提示
+     * （#853：import 完成即热回灌 SettingsRepository 内存态，无需重启）。
+     */
     private fun buildImportMessage(result: ImportResult): String {
         val lines = mutableListOf<String>()
         if (result.settingsImported) {
             lines += languageManager.getString(R.string.backup_result_settings_ok)
-            lines += languageManager.getString(R.string.backup_result_settings_restart)
+            lines += languageManager.getString(R.string.backup_result_settings_applied)
         }
         if (result.vaultImported) lines += languageManager.getString(R.string.backup_result_vault_ok)
         if (result.errors.isNotEmpty()) {
@@ -192,6 +195,7 @@ class BackupViewModel @Inject constructor(
             BackupManager.ERR_VAULT_WRITE_FAILED -> languageManager.getString(R.string.backup_result_vault_write_failed)
             BackupManager.ERR_PROVIDERS_REDACT_FAILED -> languageManager.getString(R.string.backup_result_providers_redact_failed)
             BackupManager.ERR_SETTINGS_WRITE_FAILED -> languageManager.getString(R.string.backup_result_settings_write_failed_fmt, context)
+            BackupManager.ERR_SETTINGS_RELOAD_FAILED -> languageManager.getString(R.string.backup_result_settings_reload_failed)
             else -> code
         }
     }

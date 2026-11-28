@@ -52,7 +52,8 @@
     <string name="backup_export_success">Backup exported</string>
     <string name="backup_export_failed_fmt">Export failed: %1$s</string>
     <string name="backup_result_settings_ok">Settings restored</string>
-    <string name="backup_result_settings_restart">Restart the app for restored settings to take full effect</string>
+    <string name="backup_result_settings_applied">Effective immediately — no restart needed</string>
+    <string name="backup_result_settings_reload_failed">Settings were written but could not be applied immediately — restart the app before editing settings to avoid overwriting the restored data</string>
     <string name="backup_result_vault_ok">Vault restored</string>
     <string name="backup_result_vault_passphrase_missing">Vault passphrase is required</string>
     <string name="backup_result_vault_decrypt_failed">Vault decryption failed — wrong passphrase or corrupted data</string>
