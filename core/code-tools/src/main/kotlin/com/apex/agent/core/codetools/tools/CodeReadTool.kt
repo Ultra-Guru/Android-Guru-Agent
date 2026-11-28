@@ -125,30 +125,48 @@ class CodeReadTool(
     // ── 渲染 ─────────────────────────────────────────────────────────
 
     private fun renderFile(file: File, offset: Int, limit: Int): String {
-        val lines = readFileLines(file)
-        val total = lines.size
+        val window = readFileWindow(file, offset, limit)
+        val total = window.totalLines
         if (total == 0) return "${relPath(file)} — empty file (0 lines)"
 
-        val start = (offset - 1).coerceIn(0, total - 1)
-        val end = minOf(start + limit, total)
-        val shown = lines.subList(start, end)
-
+        val start = window.startLine
         return buildString {
             appendLine("<path>${relPath(file)}</path>")
             appendLine("<type>file</type>")
             appendLine("<total_lines>$total</total_lines>")
             append("<content>")
-            for (i in shown.indices) {
+            // #830：累计 50KB 上限兑现 KDoc 三重上限的第三重（旧实现上限
+            // 实为 MAX_LIMIT × MAX_LINE_CHARS ≈ 4MB，比承诺大 80 倍）。按
+            // UTF-8 字节计（CJK 行不会被 char 计数口径放行）；首行不卡
+            // （bytes>0 守卫）保证永远至少返回一行。
+            var bytes = 0
+            var lastShown = start
+            var capped = false
+            for (i in window.lines.indices) {
                 val lineNo = start + i + 1
-                val raw = shown[i]
+                val raw = window.lines[i]
                 val line = if (raw.length > MAX_LINE_CHARS) raw.take(MAX_LINE_CHARS) + "…[truncated]" else raw
-                append("\n$lineNo: $line")
+                val rendered = "\n$lineNo: $line"
+                val renderedBytes = rendered.toByteArray(Charsets.UTF_8).size
+                if (bytes > 0 && bytes + renderedBytes > MAX_TOTAL_OUTPUT_BYTES) {
+                    capped = true
+                    break
+                }
+                append(rendered)
+                bytes += renderedBytes
+                lastShown = lineNo
             }
             append("\n</content>")
-            if (end < total) {
-                append("\n(Showing lines ${start + 1}-$end of $total. Use offset=${end + 1} to continue.)")
-            } else if (start > 0) {
-                append("\n(Showing lines ${start + 1}-$end of $total.)")
+            when {
+                capped -> append(
+                    "\n(Output reached the 50KB per-read limit at line $lastShown. " +
+                        "Use offset=${lastShown + 1} to continue.)"
+                )
+                start + window.lines.size < total -> append(
+                    "\n(Showing lines ${start + 1}-${start + window.lines.size} of $total. " +
+                        "Use offset=${start + window.lines.size + 1} to continue.)"
+                )
+                start > 0 -> append("\n(Showing lines ${start + 1}-${start + window.lines.size} of $total.)")
             }
         }
     }
@@ -182,9 +200,38 @@ class CodeReadTool(
 
     // ── 辅助 ─────────────────────────────────────────────────────────
 
-    private fun readFileLines(file: File): List<String> {
-        val raw = file.readText(Charsets.UTF_8)
-        return raw.split('\n').let { if (it.isNotEmpty() && it.last().isEmpty() && raw.endsWith("\n")) it.dropLast(1) else it }
+    /** 文件窗口读取结果（#830 流式）：总行数 + 窗口起始下标（0-based）+ 窗口行。 */
+    private class FileWindow(val totalLines: Int, val startLine: Int, val lines: List<String>)
+
+    /**
+     * #830：流式窗口读取 —— 单遍计数 + 只保留窗口行。
+     *
+     * 旧实现每次分页都 `readText` 整文件（≤5MB 全量入内存 + 全行 split 分配），
+     * 只取 800 行；offset 分页反复重读大文件在闪存上可感知卡顿。现在单遍
+     * BufferedReader：总行数计数与窗口捕获同遍完成，内存/分配 O(窗口)。
+     *
+     * 行语义与旧 split 实现逐字对齐：末尾换行不产生额外空行；offset 超出
+     * EOF 时钳到末行（旧 coerceIn(0, total-1) 行为保留 —— 窗口为空且越界
+     * 时回填末行）。
+     */
+    private fun readFileWindow(file: File, offset: Int, limit: Int): FileWindow {
+        val wanted = (offset - 1).coerceAtLeast(0)
+        val window = mutableListOf<String>()
+        var lastLine: String? = null
+        var total = 0
+        file.bufferedReader(Charsets.UTF_8).use { r ->
+            while (true) {
+                val line = r.readLine() ?: break
+                lastLine = line
+                if (total >= wanted && window.size < limit) window += line
+                total++
+            }
+        }
+        // 越界钳位：旧实现 start=total-1 → 只显示末行。
+        if (window.isEmpty() && total > 0 && wanted >= total) {
+            return FileWindow(total, total - 1, listOfNotNull(lastLine))
+        }
+        return FileWindow(total, wanted, window)
     }
 
     private fun relPath(file: File): String {
@@ -254,5 +301,7 @@ class CodeReadTool(
         const val MAX_LIMIT = 2000
         const val MAX_LINE_CHARS = 2000
         const val MAX_FILE_BYTES = 5L * 1024 * 1024 // 5MB readText 上限
+        /** #830：单次读取累计输出上限（UTF-8 字节）—— KDoc「三重上限」第三重。 */
+        const val MAX_TOTAL_OUTPUT_BYTES = 50 * 1024
     }
 }
