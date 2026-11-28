@@ -16,18 +16,28 @@ import com.apex.agent.core.llm.LlmMessage
 object TokenEstimator {
 
     /**
+     * #827 — 单图 token 计费估算（启发式常量）。
+     *
+     * 视觉 token 取决于分辨率与 provider 切片策略（GPT-4o 低清 ~85 / 高清
+     * ~1100+，Claude ~1.1k-1.6k，Gemini ~258/图），取 1000/图是**保守量级**：
+     * 用途是压缩门与上下文仪表盘的「图片不免费」可见性，而非精确计费。
+     * 不用数据长度估算：base64 字节数与 token 无线性关系（同一图片不同
+     * 压缩率字节差一个量级），按字节估反而系统性失真，故用固定常量。
+     */
+    const val IMAGE_TOKEN_ESTIMATE = 1_000
+
+    /**
      * 估算单条消息的token数
      */
-    fun estimateMessage(msg: LlmMessage): Int {
-        val text = when (msg) {
-            is LlmMessage.System -> msg.content
-            is LlmMessage.User -> msg.content
-            is LlmMessage.Assistant -> {
-                msg.content + msg.toolCalls.sumOf { it.name.length + it.arguments.length }
-            }
-            is LlmMessage.ToolResult -> msg.content
-        }
-        return estimateText(text)
+    fun estimateMessage(msg: LlmMessage): Int = when (msg) {
+        is LlmMessage.System -> estimateText(msg.content)
+        is LlmMessage.User ->
+            // #827：图片按 [IMAGE_TOKEN_ESTIMATE]/图计费 —— 旧实现只计文本，
+            // 携图消息在压缩门与仪表盘口径下「零成本」，门永远看不到图片驻留。
+            estimateText(msg.content) + msg.images.size * IMAGE_TOKEN_ESTIMATE
+        is LlmMessage.Assistant ->
+            estimateText(msg.content + msg.toolCalls.sumOf { it.name.length + it.arguments.length })
+        is LlmMessage.ToolResult -> estimateText(msg.content)
     }
 
     /**

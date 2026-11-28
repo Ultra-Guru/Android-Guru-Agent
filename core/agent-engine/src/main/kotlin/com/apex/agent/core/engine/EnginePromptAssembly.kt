@@ -15,6 +15,9 @@ import com.apex.agent.core.engine.task.DanglingToolCallRepair
  */
 internal suspend fun ApexAgentEngine.buildMessages(): List<LlmMessage> {
     repairDanglingToolCalls()
+    // #827：早前轮次图片退场（keep-last-K）—— 必须在历史进请求前收敛，
+    // 否则旧图每轮重传重计费、VISION 路由整段循环不退出（见 EngineHistoryImages.kt）。
+    evictAgedHistoryImages()
     val messages = mutableListOf<LlmMessage>()
     messages.add(LlmMessage.System(buildSystemPrompt()))
     val dropped = promptPipeline.lastDroppedTurnIndices

@@ -869,8 +869,11 @@ class ApexAgentEngine(
             var thinkingEmittedForIteration = false
             emit(AgentEvent.IterationStart(iteration))
 
-            // P7: 每轮迭代前检查是否需要压缩
-            maybeCompressContext(emit)
+            // P7: 每轮迭代前检查是否需要压缩（#826：门输入计入 system prompt 与
+            // 工具 schema 载荷 —— 压缩门在本轮计划构建前运行，取上一轮实测快照，
+            // 首轮保守常量，见 EngineCompressionGate.compressionGateInputs）。
+            val (gateSysPromptTokens, gateToolsTokens) = compressionGateInputs()
+            maybeCompressContext(emit, gateSysPromptTokens, gateToolsTokens)
 
             if (thinkingController.effectiveLevel(config) != ThinkingLevel.NONE && !thinkingEmittedForIteration) {
                 emit(AgentEvent.ThinkingStart(iteration, thinkingController.effectiveLevel(config)))
@@ -881,11 +884,13 @@ class ApexAgentEngine(
             // 本轮 LLM；不匹配/失败照常走 LLM。
             when (val bypass = memoryObserver?.tryBypass()) {
                 is BypassOutcome.Executed -> {
-                    emit(
-                        AgentEvent.ResponseChunk(
-                            "⚡ 肌肉记忆旁路执行完成（${bypass.actionCount} 步，已跳过 LLM 推理）。"
-                        )
-                    )
+                    // #820：continue 路径必须补发 ResponseComplete —— UI 流式
+                    // 气泡只认 ResponseComplete 落定，漏发则气泡永不收尾，下一轮
+                    // 回复粘进同一气泡（与正常收尾路径同构：Chunk 后必跟 Complete）。
+                    val bypassNotice =
+                        "⚡ 肌肉记忆旁路执行完成（${bypass.actionCount} 步，已跳过 LLM 推理）。"
+                    emit(AgentEvent.ResponseChunk(bypassNotice))
+                    emit(AgentEvent.ResponseComplete(bypassNotice))
                     continue
                 }
                 is BypassOutcome.Failed -> {
@@ -1079,6 +1084,9 @@ class ApexAgentEngine(
                     ) {
                         promiseNudged = true
                         addMessage(LlmMessage.Assistant(contentBuilder.toString()))
+                        // #820：催促续跑前收口本轮气泡（完整正文已落历史；漏发
+                        // ResponseComplete 会让流式气泡跨轮悬挂、下轮粘连）。
+                        emit(AgentEvent.ResponseComplete(contentBuilder.toString()))
                         addMessage(
                             LlmMessage.System(com.apex.agent.core.engine.assist.PromiseDetector.NUDGE_MESSAGE)
                         )
@@ -1092,6 +1100,9 @@ class ApexAgentEngine(
                         when (decision) {
                             is GoalDecision.Continue -> {
                                 addMessage(LlmMessage.Assistant(contentBuilder.toString()))
+                                // #820：验收续跑前收口本轮气泡（正文已落历史；
+                                // 漏发 ResponseComplete 会让流式气泡跨轮悬挂）。
+                                emit(AgentEvent.ResponseComplete(contentBuilder.toString()))
                                 addMessage(LlmMessage.System(decision.continuationNote))
                                 emit(AgentEvent.ThinkingChunk(decision.userNotice))
                                 continue

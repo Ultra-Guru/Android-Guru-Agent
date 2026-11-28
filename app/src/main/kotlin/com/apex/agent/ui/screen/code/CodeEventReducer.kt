@@ -31,6 +31,18 @@ import kotlinx.serialization.json.jsonPrimitive
 internal fun CodeViewModel.reduce(event: AgentEvent) {
     when (event) {
         is AgentEvent.IterationStart -> {
+            // #820 纵深防御：新迭代开始时收口遗留流式气泡 —— 引擎 continue
+            // 路径（肌肉记忆旁路 / 承诺催促 / GOAL 续跑）历史上存在漏发
+            // ResponseComplete 的窗口，悬挂的 isStreaming 气泡会把下一轮
+            // ResponseChunk 粘进同一气泡；正常路径已收口（此处幂等，零变化）。
+            _uiState.update { state ->
+                if (state.messages.none { it.isStreaming }) state
+                else state.copy(
+                    messages = state.messages.map { m ->
+                        if (m.isStreaming) m.copy(isStreaming = false) else m
+                    }
+                )
+            }
             _uiState.update { it.copy(currentIteration = event.iteration) }
             // AUTO 可解释性已前移到发送前预检（resolveRuntimeThinkingLevel
             // 产生 adaptiveDecision + 系统消息）；引擎侧从不接收 AUTO，
