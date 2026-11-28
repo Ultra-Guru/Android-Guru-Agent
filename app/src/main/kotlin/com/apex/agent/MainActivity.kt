@@ -7,6 +7,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -72,6 +73,16 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // ═══ #857：FLAG_SECURE 屏幕防护（默认开）═══
+        // 终端输出 / 金库密钥页 / 聊天记录等敏感面此前会进入最近任务缩略图
+        // 与系统截屏/录屏 —— 置位 FLAG_SECURE 后窗口内容对截屏管线不可见。
+        // 代价：用户自己也截不了本应用的屏（需截取终端或聊天时在
+        // 设置 → 权限页「屏幕安全」临时关闭，下方 collector 热切换、无需
+        // 重启）。首帧前同步置位（防启动闪现），运行期切换由下方 collector
+        // 跟随 AgentSettings.secureScreen（默认 true，旧配置升级即受保护）。
+        applySecureScreen(settingsRepository.agentSettings.value.secureScreen)
+
         // ★ 修复（终端页「输入框挡住命令」的 API<30 档）：edge-to-edge（
         //   LAYOUT_FULLSCREEN|LAYOUT_HIDE_NAVIGATION）在 API 30 以下会令
         //   windowSoftInputMode=adjustResize **失效**，且 WindowInsets.ime() 恒报 0
@@ -144,6 +155,13 @@ class MainActivity : ComponentActivity() {
                     recreate()
                 }
             }
+        }
+
+        // #857：屏幕安全开关的运行期热切换（设置 → 权限页「屏幕安全」）——
+        // StateFlow 首个发射值与 onCreate 已置位值相同，collect 只在用户切换
+        // 后产生实际增删 flag 动作（其余设置项变更重复置位幂等、零成本）。
+        lifecycleScope.launch {
+            settingsRepository.agentSettings.collect { cfg -> applySecureScreen(cfg.secureScreen) }
         }
         setContent {
             // 全局外观由设置中心驱动：主题模式 / 动态取色 / 字体缩放 / 时间戳开关
@@ -243,6 +261,23 @@ class MainActivity : ComponentActivity() {
             gracefulShutdownTerminalRuntime()
         }
         super.onDestroy()
+    }
+
+    /**
+     * #857：按开关同步 FLAG_SECURE —— true 置位（内容不进缩略图/截屏/录屏），
+     * false 显式清除（恢复用户截屏能力）；setFlags/clearFlags 均幂等，
+     * 重复调用零成本。仅在主线程被调用（onCreate 与 lifecycleScope 默认
+     * Main 调度器）。
+     */
+    private fun applySecureScreen(enabled: Boolean) {
+        if (enabled) {
+            window.setFlags(
+                WindowManager.LayoutParams.FLAG_SECURE,
+                WindowManager.LayoutParams.FLAG_SECURE
+            )
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        }
     }
 
     /** 优雅收尾终端运行时：独立作用域 + 10s 有界等待（幂等 —— runtime 内部

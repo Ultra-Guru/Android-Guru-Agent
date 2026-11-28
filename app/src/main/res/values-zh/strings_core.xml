@@ -242,6 +242,11 @@
     <string name="settings_timestamps">显示消息时间戳</string>
     <string name="settings_timestamps_desc">在消息气泡旁显示 HH:mm 时间戳，立即生效</string>
 
+    <!-- Screen security (#857 FLAG_SECURE toggle) -->
+    <string name="settings_secure_screen_section">屏幕安全</string>
+    <string name="settings_secure_screen">阻止截屏与录屏</string>
+    <string name="settings_secure_screen_desc">默认开启：终端输出、金库密钥页与聊天记录不进入最近任务缩略图、截屏与录屏。需要截取终端或聊天内容时临时关闭，立即生效。</string>
+
     <!-- Notes -->
 
     <!-- Providers dialog -->

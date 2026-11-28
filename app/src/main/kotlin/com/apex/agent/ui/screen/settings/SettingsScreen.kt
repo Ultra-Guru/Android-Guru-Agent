@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Extension
+import androidx.compose.material.icons.outlined.ScreenLockPortrait
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.outlined.Science
 import androidx.compose.material.icons.outlined.Tune
@@ -426,6 +427,22 @@ private fun SettingsPageRouter(
                 onModeChange = { m -> onAgent { copy(permissionMode = m) } },
                 onRulesChange = { rs -> onAgent { copy(permissionRules = rs) } }
             )
+            // #857：FLAG_SECURE 屏幕安全开关（本页属「代理与安全」分组，
+            // 关键词含「安全」）。接线：MainActivity 按本值置位/清除 window
+            // flag，切换即时生效（与上方权限模式的重启语义不同，行内描述
+            // 已标明「立即生效」）。
+            SectionCard(
+                title = stringResource(R.string.settings_secure_screen_section),
+                icon = Icons.Outlined.ScreenLockPortrait,
+                initiallyExpanded = true
+            ) {
+                SwitchRow(
+                    label = stringResource(R.string.settings_secure_screen),
+                    checked = agent.secureScreen,
+                    description = stringResource(R.string.settings_secure_screen_desc),
+                    onCheckedChange = { on -> onAgent { copy(secureScreen = on) } }
+                )
+            }
         }
         "agent.policy" -> TerminalCommandPolicyPage()
         "agent.rules" -> SettingsLeafColumn {

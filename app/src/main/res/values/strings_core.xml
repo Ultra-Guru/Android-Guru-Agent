@@ -242,6 +242,11 @@
     <string name="settings_timestamps">Show message timestamps</string>
     <string name="settings_timestamps_desc">Show an HH:mm timestamp by each message bubble, applies immediately</string>
 
+    <!-- Screen security (#857 FLAG_SECURE toggle) -->
+    <string name="settings_secure_screen_section">Screen Security</string>
+    <string name="settings_secure_screen">Block screenshots and screen recording</string>
+    <string name="settings_secure_screen_desc">On by default: terminal output, vault key pages and chat transcripts stay out of the recents thumbnail, screenshots and screen recording. Turn it off temporarily when you need to capture the terminal or a chat, applies immediately.</string>
+
     <!-- Notes -->
 
     <!-- Providers dialog -->
