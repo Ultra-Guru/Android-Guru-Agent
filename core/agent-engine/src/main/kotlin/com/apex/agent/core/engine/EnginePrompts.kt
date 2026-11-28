@@ -710,18 +710,59 @@ internal object EnginePrompts {
         appendLine("Execute this step now using the appropriate tool. Be concise.")
     }
 
-    fun buildReflectionPrompt(plan: ExecutionPlan): String = buildString {
+    /**
+     * #828 — 反思提示词：注入执行期采集的「步骤结果清单」。
+     *
+     * 旧实现反思请求只携带计划文本（System + 本 prompt）—— 模型被要求
+     * 汇报交付物却看不到一个工具输出/错误/部分完成状态，只能把「计划要做的」
+     * 编造成「做了的」。stepOutcomes 为空（旧调用方/空计划）时整段省略，
+     * 输出与旧版逐字节一致。
+     */
+    fun buildReflectionPrompt(
+        plan: ExecutionPlan,
+        stepOutcomes: List<String> = emptyList()
+    ): String = buildString {
         appendLine("The following plan has been executed:")
         appendLine("Goal: ${plan.goal}")
         plan.steps.forEach { step ->
             appendLine("  ${step.index + 1}. ${step.description}")
         }
         appendLine()
+        if (stepOutcomes.isNotEmpty()) {
+            appendLine("Actual step outcomes from execution (ground truth — report THESE, not the plan):")
+            stepOutcomes.forEach { appendLine(it) }
+            appendLine()
+        }
         appendLine(
             "State the final outcome and key deliverables directly in 2-4 sentences. " +
+                "Base your report strictly on the actual step outcomes above when present; " +
+                "failures and partial completions must be stated, never glossed over. " +
                 "Do NOT announce completion (no phrases like 'task complete', '任务已完成', " +
                 "'all done'), and no closing pleasantries. Note any issues, partial " +
                 "completions, or follow-ups the user should know about."
         )
+    }
+
+    /**
+     * #828 — 单步骤执行结果行（[buildReflectionPrompt] 的 ground truth 材料）。
+     *
+     * 优先级：notRun > error > 收尾摘要；摘要换行折叠 + take(200) 防反射放大。
+     * 「final model summary」措辞刻意中性 —— 步骤模型的收尾陈述是**声明**
+     * 而非完成证据，反思模型需自行甄别。
+     */
+    fun renderStepOutcome(
+        index: Int,
+        description: String,
+        finalText: String?,
+        error: String?,
+        notRun: Boolean
+    ): String {
+        val head = "- Step ${index + 1} (${description.take(80)}): "
+        return when {
+            notRun -> head + "NOT RUN — task was aborted before this step started"
+            error != null -> head + "ERROR — " + error.replace('\n', ' ').take(200)
+            finalText == null -> head + "ended without a final text summary (tool-only loop or iteration cap)"
+            else -> head + "final model summary — " + finalText.replace('\n', ' ').take(200)
+        }
     }
 }
