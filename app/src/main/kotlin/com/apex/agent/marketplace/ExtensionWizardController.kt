@@ -45,7 +45,7 @@ class ExtensionWizardController @javax.inject.Inject constructor(
     private val _state = MutableStateFlow(WizardUiState())
     val state: StateFlow<WizardUiState> = _state.asStateFlow()
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = com.apex.agent.di.AppScopes.io("ExtensionWizardController")
 
     fun show() = _state.update { it.copy(visible = true, result = null) }
     fun hide() = _state.update { it.copy(visible = false) }

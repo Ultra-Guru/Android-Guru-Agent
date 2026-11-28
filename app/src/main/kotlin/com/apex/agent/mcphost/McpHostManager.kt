@@ -122,7 +122,7 @@ class McpHostManager(
         }
     }
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = com.apex.agent.di.AppScopes.io("McpHostManager")
 
     /** token 读改写串行锁（见类 KDoc 并发模型；锁内无挂起点）。 */
     private val tokenLock = Any()

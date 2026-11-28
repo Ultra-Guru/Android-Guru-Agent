@@ -50,7 +50,7 @@ class MarketMcpSoController @Inject constructor(
         val installingSlug: String? = null
     )
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val scope = com.apex.agent.di.AppScopes.mainImmediate("MarketMcpSoController")
 
     private val _uiState = MutableStateFlow(McpSoUiState())
     val uiState: StateFlow<McpSoUiState> = _uiState.asStateFlow()

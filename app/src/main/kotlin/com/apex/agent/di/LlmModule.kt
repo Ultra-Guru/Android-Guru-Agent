@@ -77,7 +77,7 @@ object LlmModule {
         fun applyToggle(profiles: List<ModelProfile>, enabled: Boolean): List<ModelProfile> =
             if (enabled) profiles.map { it.copy(webSearch = WebSearchMode.AUTO) } else profiles
 
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val scope = com.apex.agent.di.AppScopes.default("LlmModule")
         val effectiveProfiles = combine(repo.profiles, chatToolkit.webSearchEnabled) { list, enabled ->
             applyToggle(list, enabled)
         }.stateIn(

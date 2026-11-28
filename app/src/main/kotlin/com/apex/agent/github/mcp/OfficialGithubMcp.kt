@@ -80,7 +80,7 @@ object OfficialGithubMcp {
  */
 object OfficialGithubMcpBootstrap {
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = com.apex.agent.di.AppScopes.io("OfficialGithubMcp")
 
     fun ensurePreset(manager: McpManager) {
         scope.launch {

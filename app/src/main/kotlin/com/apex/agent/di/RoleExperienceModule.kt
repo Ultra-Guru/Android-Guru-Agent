@@ -50,7 +50,7 @@ object RoleExperienceModule {
     @Singleton
     @ExperiencePersistScope
     fun provideExperiencePersistScope(): CoroutineScope =
-        CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        com.apex.agent.di.AppScopes.io("RoleExperienceModule")
 
     @Provides
     @Singleton

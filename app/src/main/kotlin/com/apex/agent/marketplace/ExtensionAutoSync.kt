@@ -38,7 +38,7 @@ class ExtensionAutoSync @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val notifications: ApexNotifications
 ) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = com.apex.agent.di.AppScopes.io("ExtensionAutoSync")
 
     private val runner by lazy { ExtensionAutoSyncRunner(installer, registry) }
 

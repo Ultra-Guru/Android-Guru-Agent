@@ -52,7 +52,7 @@ import kotlinx.coroutines.launch
  *   多余的删除；当日文件永远是最新的一个，不会被误删。
  *
  * ## 线程模型
- * 自建 `CoroutineScope(SupervisorJob() + Dispatchers.IO)`，随进程存活
+ * 自建 `com.apex.agent.di.AppScopes.io("LogFileSink")`，随进程存活
  * （单例，无需 cancel）。collect 串行执行，[dayFormat]/[lineTimeFormat]
  * 仅从该协程访问，仍按 [SimpleDateFormat] 非线程安全惯例加 synchronized。
  */
@@ -61,7 +61,7 @@ class LogFileSink @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
     private val started = AtomicBoolean(false)
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = com.apex.agent.di.AppScopes.io("LogFileSink")
 
     /** 已落盘记录 id 的去重窗口（synchronized 保护；容量 256 > replay 64）。 */
     private val seenIds = ArrayDeque<Long>()

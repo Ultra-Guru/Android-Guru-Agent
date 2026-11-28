@@ -56,7 +56,7 @@ object CodeLongTaskModule {
         // 启动维护：后台裁剪历史记录（保留 50 条）。
         // 只预置不阻塞：@Provides 副作用模式（McpModule Bootstrap 先例），
         // 失败仅 warn——prune 是优化不是正确性前提。
-        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+        com.apex.agent.di.AppScopes.io("CodeLongTaskModule").launch {
             runCatching { store.prune(keep = LONG_TASK_KEEP) }
                 .onSuccess { pruned ->
                     if (pruned > 0) {
@@ -80,7 +80,7 @@ object CodeLongTaskModule {
     @Singleton
     @LongTaskPersistScope
     fun provideLongTaskPersistScope(): CoroutineScope =
-        CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        com.apex.agent.di.AppScopes.io("CodeLongTaskModule")
 
     @Provides
     @Singleton

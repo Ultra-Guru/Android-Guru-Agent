@@ -55,7 +55,7 @@ class MarketHubController @Inject constructor(
         val installingMcpName: String? = null
     )
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val scope = com.apex.agent.di.AppScopes.mainImmediate("MarketHubController")
 
     private val _uiState = MutableStateFlow(HubUiState())
     val uiState: StateFlow<HubUiState> = _uiState.asStateFlow()

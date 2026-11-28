@@ -47,7 +47,7 @@ class MarketOperitController @Inject constructor(
         val installingKey: String? = null
     )
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val scope = com.apex.agent.di.AppScopes.mainImmediate("MarketOperitController")
 
     private val _uiState = MutableStateFlow(OperitUiState())
     val uiState: StateFlow<OperitUiState> = _uiState.asStateFlow()

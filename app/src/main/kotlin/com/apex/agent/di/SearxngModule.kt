@@ -94,7 +94,7 @@ object SearxngModule {
         ubuntuReady = {
             ubuntu.stateFlow.value.phase == UbuntuLifecycleCoordinator.Phase.READY
         },
-        scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        scope = com.apex.agent.di.AppScopes.default("SearxngModule")
     )
 
     @Provides

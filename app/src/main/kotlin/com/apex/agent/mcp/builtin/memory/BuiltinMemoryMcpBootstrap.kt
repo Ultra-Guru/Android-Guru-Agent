@@ -21,7 +21,7 @@ import kotlinx.coroutines.launch
  */
 object BuiltinMemoryMcpBootstrap {
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = com.apex.agent.di.AppScopes.io("BuiltinMemoryMcpBootstrap")
 
     fun ensureAndConnect(manager: McpManager) {
         scope.launch {

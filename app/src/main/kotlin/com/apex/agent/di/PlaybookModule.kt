@@ -45,7 +45,7 @@ object PlaybookModule {
         val registry = PlaybookRegistry(
             storageDir = File(context.filesDir, "playbooks")
         )
-        val seedScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val seedScope = com.apex.agent.di.AppScopes.io("PlaybookModule")
         seedScope.launch {
             runCatching { registry.reseedBuiltIns() }
                 .onFailure { Log.w("PlaybookModule", "seed built-in playbooks failed: ${it.message}") }
