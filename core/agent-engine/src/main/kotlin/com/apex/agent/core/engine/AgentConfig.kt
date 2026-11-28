@@ -239,7 +239,15 @@ data class AgentConfig(
      * 语义见 AutonomyLevel.promptInstruction）；默认关闭，切级别保留状态
      * （持久化在 AgentSettings.codeFullAutoPreClarify）。
      */
-    val fullAutoPreClarify: Boolean = false
+    val fullAutoPreClarify: Boolean = false,
+
+    /**
+     * 计划层角色过滤是否跟随进程级动态授予源（[EngineRoleGrants]：设置开关 +
+     * 模板工坊激活，每轮现取）。默认开——修复 browser_* 工具因 [grantedRoles]
+     * 快照恒空而从未进入请求的 P0。子代理工厂置 false：子代理**默认不继承**
+     * browser 角色（v2.1.0 文档口径），仅认 cfg 显式携带的 [grantedRoles]。
+     */
+    val inheritDynamicRoleGrants: Boolean = true
 ) {
     companion object {
         /** 快速模式：Build + 无思考 */
