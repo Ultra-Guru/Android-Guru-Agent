@@ -20,7 +20,8 @@ import java.io.File
  * - 文件/目录二合一：目标是目录时返回按字母序的条目清单（目录带 `/` 尾），
  *   同样支持 offset/limit 分页 —— "先 ls 再 cd 式"的探索在单工具内闭环；
  * - 未命中时给出同目录**相似名建议**（Did you mean…）—— 显著降低路径幻觉循环；
- * - 三重上限：默认 800 行 / 单行 2000 字符截断 / 累计 50KB —— 超限提示用
+ * - 三重上限：默认 800 行 / 单行 2000 字符截断 / 单次渲染累计输出 50KB
+ *   （按 UTF-8 字节计，仅作用于文件内容，目录清单不设）—— 超限提示用
  *   offset 续读，保证大文件不会撑爆上下文窗口；
  * - 二进制嗅探（NUL 字节 + 不可打印占比）→ 明确报错而非乱码。
  *
@@ -53,8 +54,9 @@ class CodeReadTool(
           one turn instead of sequential calls.
         - Reading .env-style secret files may require user confirmation.
 
-        Size limits: 2000 chars per line, 50KB per read. Read the file in slices
-        with offset/limit instead of requesting everything at once.
+        Size limits: 2000 chars per line, 50KB cumulative output per read
+        (UTF-8 bytes, file content only). Read the file in slices with
+        offset/limit instead of requesting everything at once.
     """.trimIndent(),
     declaredSchema = toolSchema {
         string("path", required = true, description = "File or directory path, relative to the workspace root (or absolute inside it)")
@@ -138,14 +140,28 @@ class CodeReadTool(
             appendLine("<type>file</type>")
             appendLine("<total_lines>$total</total_lines>")
             append("<content>")
+            // #830：兑现 KDoc/描述承诺的「累计 50KB」输出上限 —— 旧实现只有
+            // 行数与单行字符两道闸，2000 行 × 2000 字符最坏 ~4MB（80 倍于
+            // 承诺）。逐行按 UTF-8 字节记账（含头部固定字节），预算耗尽即停
+            // 并用 offset 续读提示（与下方窗口提示同一形态）；单行截断后
+            // ≤ ~6KB，首行必能在预算内放出 —— offset 提示永远指向新行，无死循环。
+            var emittedBytes = utf8ByteLength(toString())
+            var renderedCount = 0
             for (i in shown.indices) {
                 val lineNo = start + i + 1
                 val raw = shown[i]
                 val line = if (raw.length > MAX_LINE_CHARS) raw.take(MAX_LINE_CHARS) + "…[truncated]" else raw
-                append("\n$lineNo: $line")
+                val chunk = "\n$lineNo: $line"
+                val chunkBytes = utf8ByteLength(chunk)
+                if (emittedBytes + chunkBytes > MAX_OUTPUT_BYTES) break
+                append(chunk)
+                emittedBytes += chunkBytes
+                renderedCount++
             }
             append("\n</content>")
-            if (end < total) {
+            if (renderedCount < shown.size) {
+                append("\n[已截断：累计输出达 ${MAX_OUTPUT_BYTES / 1024}KB 上限 —— 用 offset=${start + renderedCount + 1} 继续]")
+            } else if (end < total) {
                 append("\n(Showing lines ${start + 1}-$end of $total. Use offset=${end + 1} to continue.)")
             } else if (start > 0) {
                 append("\n(Showing lines ${start + 1}-$end of $total.)")
@@ -249,10 +265,32 @@ class CodeReadTool(
         else -> "${bytes}B"
     }
 
+    /** UTF-8 字节数（与 toByteArray().size 等价；逐字符累计，避免每行整串编码）。 */
+    private fun utf8ByteLength(s: String): Int {
+        var bytes = 0
+        var i = 0
+        while (i < s.length) {
+            val c = s[i].toInt()
+            bytes += when {
+                c < 0x80 -> 1
+                c < 0x800 -> 2
+                // 代理对：两个 char 合计 4 字节（不成对的按 3 字节替补字符计）
+                c in 0xD800..0xDBFF && i + 1 < s.length &&
+                    s[i + 1].toInt() in 0xDC00..0xDFFF -> { i++; 4 }
+                else -> 3
+            }
+            i++
+        }
+        return bytes
+    }
+
     private companion object {
         const val DEFAULT_LIMIT = 800
         const val MAX_LIMIT = 2000
         const val MAX_LINE_CHARS = 2000
         const val MAX_FILE_BYTES = 5L * 1024 * 1024 // 5MB readText 上限
+
+        /** #830：单次文件内容渲染的累计输出上限（UTF-8 字节）。 */
+        const val MAX_OUTPUT_BYTES = 50 * 1024
     }
 }
