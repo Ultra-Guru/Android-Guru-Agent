@@ -21,6 +21,14 @@ interface UiInteractionProvider {
 
     /** 获取当前屏幕的结构化 UI 树 */
     suspend fun dumpUiTree(maxDepth: Int = 20): String
+
+    /**
+     * 无障碍文本输入（真机 P0 修复：[InputTextTool] 此前只有 `input text` shell
+     * 通路 —— keycharacter-map 不含 CJK 会静默丢字，且无 Root/Shizuku 时
+     * `INJECT_EVENTS` 必被拒；DefaultPrivilegeManager 的 ACTION_SET_TEXT 实现
+     * 是从未被调用的死代码）。默认 null = 本实现不支持，调用方回落 shell。
+     */
+    suspend fun inputText(text: String): String? = null
 }
 
 /**
@@ -83,14 +91,15 @@ class UiTapTool(
         val y = json["y"]?.jsonPrimitive?.intOrNull ?: return "Error: 'y' required"
         val longPress = json["long_press"]?.jsonPrimitive?.booleanOrNull ?: false
 
-        // 优先使用 AccessibilityService 语义手势
+        // 优先使用 AccessibilityService 语义手势；被系统拒绝时回落 shell `input`
         if (uiProvider?.isAvailable == true) {
             val action = if (longPress) {
                 GestureAction.LongPress(x, y)
             } else {
                 GestureAction.Tap(x, y)
             }
-            return uiProvider.performGesture(action)
+            val shellFallback = if (longPress) "input swipe $x $y $x $y 1000" else "input tap $x $y"
+            return gestureWithShellFallback(uiProvider, shellExecutor, action, shellFallback)
         }
 
         // 回退到 input 命令
@@ -100,6 +109,23 @@ class UiTapTool(
             shellExecutor("input tap $x $y")
         }
     }
+}
+
+/**
+ * 无障碍手势失败 → 回落 shell `input` 命令（Root→Shizuku→沙箱链）。
+ *
+ * 真机 P0：此前 a11y 路径的失败（Swipe 曾 100% `Unsupported action`、手势被系统
+ * 拒绝、服务解绑中）被当成终局直接回灌模型，Ui 工具族不回落 shell ——
+ * 「开了无障碍反而更坏」倒挂的根因之一。
+ */
+internal suspend fun gestureWithShellFallback(
+    uiProvider: UiInteractionProvider,
+    shellExecutor: suspend (String) -> String,
+    action: GestureAction,
+    shellCommand: String
+): String {
+    val result = uiProvider.performGesture(action)
+    return if (result.startsWith("Error")) shellExecutor(shellCommand) else result
 }
 
 /**
@@ -150,10 +176,13 @@ class UiSwipeTool(
         val direction = json["direction"]?.jsonPrimitive?.content
         val duration = json["duration_ms"]?.jsonPrimitive?.intOrNull ?: 300
 
-        // 优先使用 AccessibilityService 语义手势
+        // 优先使用 AccessibilityService 语义手势；被系统拒绝时回落 shell `input swipe`
         if (uiProvider?.isAvailable == true && direction != null) {
-            return uiProvider.performGesture(
-                GestureAction.DirectionalScroll(direction, duration)
+            val coords = directionCoords(direction) ?: return "Error: Unknown direction"
+            return gestureWithShellFallback(
+                uiProvider, shellExecutor,
+                GestureAction.DirectionalScroll(direction, duration),
+                "input swipe ${coords[0]} ${coords[1]} ${coords[2]} ${coords[3]} $duration"
             )
         }
 
@@ -161,12 +190,6 @@ class UiSwipeTool(
             val coords = directionCoords(direction)
                 ?: return "Error: Unknown direction"
             val cmd = "input swipe ${coords[0]} ${coords[1]} ${coords[2]} ${coords[3]} $duration"
-
-            if (uiProvider?.isAvailable == true) {
-                return uiProvider.performGesture(
-                    GestureAction.Swipe(coords[0], coords[1], coords[2], coords[3], duration)
-                )
-            }
             return shellExecutor(cmd)
         }
 
@@ -176,7 +199,11 @@ class UiSwipeTool(
         val y2 = json["y2"]?.jsonPrimitive?.intOrNull ?: return "Error: 'y2' required"
 
         if (uiProvider?.isAvailable == true) {
-            return uiProvider.performGesture(GestureAction.Swipe(x1, y1, x2, y2, duration))
+            return gestureWithShellFallback(
+                uiProvider, shellExecutor,
+                GestureAction.Swipe(x1, y1, x2, y2, duration),
+                "input swipe $x1 $y1 $x2 $y2 $duration"
+            )
         }
         return shellExecutor("input swipe $x1 $y1 $x2 $y2 $duration")
     }
@@ -425,7 +452,8 @@ class ScreenshotTool(
  * 的键盘门控范式）。遥测未接入时（未知态）fail-open，行为与 v1 一致。
  */
 class InputTextTool(
-    private val shellExecutor: suspend (String) -> String
+    private val shellExecutor: suspend (String) -> String,
+    private val uiProvider: UiInteractionProvider? = null
 ) : AgentTool, EnvironmentAwareTool {
 
     override val requiredEnv: List<String> =
@@ -434,7 +462,9 @@ class InputTextTool(
     override val id = "InputText"
     override val name = "Input Text"
     override val description = """
-        Type text into the currently focused input field.
+        Type text into the currently focused input field (prefers accessibility
+        ACTION_SET_TEXT — full Unicode incl. Chinese; falls back to `input text`,
+        which is ASCII-only and needs Root/Shizuku).
         Make sure the target input field is focused (tap it first with UiTap).
 
         For special keys, use key codes:
@@ -472,6 +502,19 @@ class InputTextTool(
 
         if (text == null) return "Error: 'text' or 'keyevent' required"
 
+        // 真机 P0：优先无障碍 ACTION_SET_TEXT（整段写入焦点节点，支持中文等
+        // 非 ASCII；无需 Root/Shizuku）。实现方在节点不可写时自己回落
+        // Root/Shizuku 的 `input text`，这里只在「无障碍不可用」时走本地 shell。
+        val provider = uiProvider?.takeIf { it.isAvailable }
+        if (provider != null) {
+            val viaA11y = provider.inputText(text)
+            if (viaA11y != null) {
+                var a11yResult = viaA11y
+                if (submit) a11yResult += "\n" + shellExecutor("input keyevent 66")
+                return a11yResult
+            }
+        }
+
         // 转义特殊字符
         val escaped = text
             .replace("\\", "\\\\")
@@ -490,6 +533,12 @@ class InputTextTool(
             result += "\n" + shellExecutor("input keyevent 66")
         }
 
-        return result.ifBlank { "OK: Typed '${text.take(50)}'" }
+        // `input text` 的 keycharacter-map 不含 CJK：非 ASCII 字符静默丢字，
+        // 模型却拿到 OK —— 明确告知并指向无障碍通路，避免盲目重试。
+        val nonAsciiWarning = if (text.any { it.code > 0x7F }) {
+            "\nWarning: `input text` is ASCII-only — non-ASCII characters (e.g. Chinese) " +
+                "are silently dropped. Enable the accessibility service for full Unicode input."
+        } else ""
+        return result.ifBlank { "OK: Typed '${text.take(50)}'" } + nonAsciiWarning
     }
 }

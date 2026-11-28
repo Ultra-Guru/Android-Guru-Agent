@@ -65,11 +65,15 @@ class PrivilegedCommandSpawner : CommandSpawner {
 
     /** 每次 spawn 前探测一次（su/Shizuku 授权可能随时变化）。 */
     private fun resolve(): CommandSpawner {
-        if (PrivilegeDetector.detectRoot()) return suSpawner
-        if (ShizukuCommandExecutor.isAvailable() && ShizukuCommandExecutor.hasPermission()) {
-            return shizukuSpawner
+        // 真机 P1：走 PrivilegeDetector 的 30s TTL 档位缓存，不再每条命令 fork
+        // `su -c id`（Magisk 授权弹窗挂起时每条命令白等 3s；TerminalExec 密集的
+        // 工作流把 3s × N 叠进等待时间，且首次授权被 3s 超时吃掉后无失效钩子）。
+        // 授权变化由既有 invalidateCache 钩子（Shizuku 事件 / 权限页）与 TTL 收敛。
+        return when (PrivilegeDetector.getPrivilegeLevel()) {
+            com.apex.agent.platform.privilege.PrivilegeLevel.ROOT -> suSpawner
+            com.apex.agent.platform.privilege.PrivilegeLevel.SHIZUKU -> shizukuSpawner
+            com.apex.agent.platform.privilege.PrivilegeLevel.NORMAL_SHELL -> localSh
         }
-        return localSh
     }
 
     override val channel: String
