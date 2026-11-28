@@ -417,7 +417,7 @@ class BackupManager @Inject constructor(
                 } else {
                     value
                 }
-                if (runCatching { json.parseToJsonElement(safe) }.isFailure) {
+                if (runCatching { this.json.parseToJsonElement(safe) }.isFailure) {
                     errors += "$ERR_SETTINGS_WRITE_FAILED:$key"
                     continue
                 }
