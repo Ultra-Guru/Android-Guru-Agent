@@ -46,12 +46,17 @@ object ArgvRenderer {
     /**
      * 校验用户参数是否满足 [intent] 的声明。
      *
+     * [intent.internalParams]（执行器注入的内部占位符真值，如 file.delete 的
+     * auditId / basename）跳过校验：它们不是模型输入（来源受信），渲染期
+     * 元字符黑名单仍然生效（见 [render]）。
+     *
      * @return 错误文案列表（空 = 通过）。错误面向模型：中文 + 指出哪个参数。
      */
     fun validateParams(intent: DeviceIntent, params: Map<String, String>): List<String> {
         val errors = mutableListOf<String>()
         val declared = intent.params.associateBy { it.name }
         for ((name, value) in params) {
+            if (name in intent.internalParams) continue
             if (name !in declared) {
                 errors += "未知参数 '$name'（intent ${intent.id} 只接受：${intent.paramNames.joinToString(", ")}）"
                 continue
@@ -74,7 +79,10 @@ object ArgvRenderer {
             val value = expand(element, params)
             // 空 flag 语法：渲染为空串的元素丢弃（见类注释）。
             if (value.isEmpty()) continue
-            rejectMetachars(element, value)
+            // 元字符黑名单只对**含占位符**（用户值注入面）的元素生效：
+            // manifest 字面元素（如 stat 格式串 %n|%s|%Y）受信且以 argv
+            // 元素逐个直传 —— 无 shell 拼接面，格式串里的 '|' 是数据不是语法。
+            if (element.contains('{')) rejectMetachars(element, value)
             rendered += value
         }
         return rendered
