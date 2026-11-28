@@ -1,5 +1,8 @@
 package com.apex.agent.ui.screen.settings
 
+import com.apex.agent.core.llm.ModelProfile
+import com.apex.agent.core.llm.ModelRoleConfig
+import com.apex.agent.core.llm.ProviderConfig
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
