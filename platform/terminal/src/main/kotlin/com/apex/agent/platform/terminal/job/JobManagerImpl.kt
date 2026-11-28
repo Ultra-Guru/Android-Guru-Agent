@@ -98,6 +98,18 @@ class JobManagerImpl(
             is TerminalEvent.ProcessExited -> {
                 val jid = event.jobId ?: return
                 val job = jobs[jid] ?: return
+                // #947：终态不可逆（first-writer-wins）。旧实现对迟到退出事件
+                // 无条件 transition + copy —— 取消回调/超时回调/启发式合成
+                // 三方并发发事件时，后到者会把先到的终态（连同真实退出码）
+                // 整体覆写（TIMED_OUT → EXITED 之类的语义回退）。先到者为准。
+                if (job.state in TERMINAL_JOB_STATES) {
+                    com.apex.agent.core.logging.AppLogger.instance.debug(
+                        com.apex.agent.core.logging.LogCategory.TERMINAL, "JobManager",
+                        "late ProcessExited(${event.cause}) dropped: job $jid already ${job.state}" +
+                            " (first terminal state wins)"
+                    )
+                    return
+                }
                 val newState = when (event.cause) {
                     ExitCause.NORMAL -> JobState.EXITED
                     ExitCause.USER_INTERRUPT, ExitCause.SIGNAL -> JobState.INTERRUPTED
@@ -132,6 +144,15 @@ class JobManagerImpl(
                     val fid = foregroundJobIdBySession[event.sessionId] ?: return
                     val job = jobs[fid] ?: return
                     if (job.state != JobState.RUNNING) return
+                    // #947（甲）：陈旧提示符门 —— 事件 cursor（提示符所在读块
+                    // 的 ring buffer 终位）不晚于 job.startCursor（命令写入时的
+                    // 终位）说明这段输出早于本 job（会话初始提示符被高负载 CI
+                    // 迟读）：它不是本 job 的完成证据，不得据此合成退出。
+                    if (event.cursor <= job.startCursor) return
+                    // #947（乙）：超时让位门 —— 超时关停（TERM 已发）由超时
+                    // 通道独占终态；此刻 shell 重绘的提示符是 TERM 杀命令的
+                    // 副作用，不是「命令正常完成」。
+                    if (timeoutController?.hasShutdownInitiated(fid) == true) return
                     val base = job.command.trim().substringBefore(' ').substringAfterLast('/')
                     if (base in interactivePrograms) return
                     // T82：优先用 marker 携带的真实退出码（marker 路径通常先到并已推进终态；
