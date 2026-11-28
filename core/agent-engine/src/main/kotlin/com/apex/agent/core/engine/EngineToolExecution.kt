@@ -471,8 +471,17 @@ internal suspend fun ApexAgentEngine.finalizeToolCallOutcome(
         deferSystemNote(it)
     }
 
-    // 截断后的结果存入历史（节省后续 token）
-    addMessage(LlmMessage.ToolResult(toolCall.id, outcome.result))
+    // 截断后的结果存入历史（节省后续 token）。
+    // #831：定界信封 —— 信封包住 smartTruncate **之后**的最终文本（先包后
+    // 截会切掉闭标签），网页/文件/终端内容自此以「数据」形态进入模型上下
+    // 文。顺序路径与并行批路径都在本收口点落盘（两路共用此函数），一次包
+    // 装全量覆盖；UI 事件流（ToolCallComplete.output）保持原文不受影响。
+    addMessage(
+        LlmMessage.ToolResult(
+            toolCall.id,
+            ToolOutputEnvelope.wrap(toolCall.name, toolCall.id, outcome.result)
+        )
+    )
     // #168：工具计数 + DEEP/MAXIMUM 档在失败/HIGH 风险后注入自检提示（下一轮
     // LLM 可见）。diag-20261011：经 [deferSystemNote] 延迟落盘 —— 并行工具批
     // 中直接 addMessage 会插在本批后续 ToolResult 之前，破坏配对（400 根因）。

@@ -13,6 +13,7 @@ import com.apex.agent.core.engine.orchestrator.RecoveryPlanner
 import com.apex.agent.core.engine.task.DanglingToolCallRepair
 import com.apex.agent.core.engine.plan.PLAN_CONFIRMATION_TIMEOUT_MS
 import com.apex.agent.core.engine.plan.PlanDecision
+import com.apex.agent.core.engine.plan.PlanExecutionDigest
 import com.apex.agent.core.engine.plan.PlanGraph
 import com.apex.agent.core.engine.plan.awaitPlanConfirmationDecision
 import com.apex.agent.core.engine.terminal.TerminalProactivityAdvisor
@@ -814,22 +815,32 @@ class ApexAgentEngine(
         // Phase 4: execute each step in locked order.
         // Each step is a single iteration of the Build loop with a step-scoped user message.
         var iterations = 0
+        // #828：逐步骤收集执行记录切片（步骤 User 消息落盘后取起点），Phase 5
+        // 反思经 PlanExecutionDigest 蒸煮成有界摘要 —— 反思有真实产出可依据。
+        val stepRecordLines = mutableListOf<String>()
         for ((index, step) in locked.plan.steps.withIndex()) {
             if (!isRunning) break
             emit(AgentEvent.StepStart(index, step.description))
 
             addMessage(LlmMessage.User(EnginePrompts.buildStepExecutionPrompt(locked.plan, step, index)))
+            val stepHistoryStart = conversationHistory.size
 
             val stepIters = executeBuildLoop { event -> emit(event) }
             iterations += stepIters
+            stepRecordLines += PlanExecutionDigest.stepRecords(
+                index + 1, conversationHistory.drop(stepHistoryStart)
+            )
         }
 
         // Phase 5: reflection（只读总结，同样生效 planningPhase 约束）
+        // #828：反思请求携带 Phase 4 执行记录摘要（总量 8KB 封顶）—— 旧版
+        // 只发 System + User(goal/步骤描述)，模型被迫凭空编造交付结果。
+        val executionDigest = PlanExecutionDigest.boundedDigest(stepRecordLines)
         val reflectionBuilder = StringBuilder()
         runtime.chatStream(
             context = tagged(LlmRequestContext.primary("plan_reflection")),
             messages = listOf(LlmMessage.System(buildSystemPrompt(planningPhase = true))) +
-                LlmMessage.User(EnginePrompts.buildReflectionPrompt(locked.plan))
+                LlmMessage.User(EnginePrompts.buildReflectionPrompt(locked.plan, executionDigest))
         ).collect { chunk ->
             chunk.content?.let {
                 reflectionBuilder.append(it)
