@@ -37,6 +37,9 @@ ksp = "2.3.12"
 coil = "2.6.0"
 security-crypto = "1.1.0-alpha06"
 junit = "4.13.2"
+# DCP ToolAuditLogger 兼容测试：JVM 单测侧 org.json（android.jar 桩在单测抛 Stub!，
+# 真实实现放测试类路径前置于桩 —— 平台标准做法）
+org-json = "20240303"
 # Room 2.8.x：2.7.0 起支持 KSP2（2.6.1 的 processor 基于 KSP1 API，KSP 2.x 下不可用）
 room = "2.8.5"
 # 赛博霓虹悬浮球（JitPack；仅允许该 group 走 jitpack 仓库，版本固定避免动态解析）
@@ -175,6 +178,8 @@ room-compiler = { group = "androidx.room", name = "room-compiler", version.ref =
 # Testing (unit tests in app/src/test)
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutines" }
+# ToolAuditLogger.parseLineInternal（org.json.JSONObject）的 JVM 单测真实实现
+org-json = { group = "org.json", name = "json", version.ref = "org-json" }
 
 # Testing (P70: real-JNI instrumentation tests in platform/terminal/src/androidTest)
 androidx-test-ext-junit = { group = "androidx.test.ext", name = "junit", version = "1.2.1" }

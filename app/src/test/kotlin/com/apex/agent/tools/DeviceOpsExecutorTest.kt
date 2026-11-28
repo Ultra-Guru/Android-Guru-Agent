@@ -123,7 +123,9 @@ class DeviceOpsExecutorTest {
     @Test
     fun `档位不足结构化拒绝并给开通步骤`() = runTest {
         val ex = executor(probe = FixedProbe(DevicePrivilege.NORMAL_SHELL))
-        val r = ex.execute("package.list", emptyMap(), dryRun = false, token = null)
+        // package.inspect 要求 SHIZUKU 档（package.list 是 NORMAL_SHELL 档，
+        // 不足以触发拒绝路径 —— 选真需要档位提升的意图锁定拒绝语义）。
+        val r = ex.execute("package.inspect", mapOf("package" to "com.x"), dryRun = false, token = null)
         assertEquals("DEVICE_PERMISSION_REQUIRED", r.error)
         assertTrue(r.hint!!.contains("Shizuku"))
     }
@@ -211,9 +213,12 @@ class DeviceOpsExecutorTest {
         // 2) 带 token 执行。
         val r = ex.execute("package.uninstall", mapOf("package" to "com.target.app"), dryRun = false, token = token)
         assertEquals(true, r.ok)
-        assertEquals("true", r.verify["installed"])
-        // 通道看到写 argv：pm uninstall com.target.app（不经 sh -c）。
-        val execArgv = channel.argv.last()
+        // verify 复探：卸载后 pm list packages 不再含目标包 → installed=false
+        // （与 afterPredicted 一致 — ok 联合判定通过的前提）。
+        assertEquals("false", r.verify["installed"])
+        // 通道看到写 argv：pm uninstall com.target.app（不经 sh -c；last()
+        // 是 verify 探针，从全部 argv 里筛出 uninstall 写命令）。
+        val execArgv = channel.argv.first { it.firstOrNull() == "pm" && it.contains("uninstall") }
         assertEquals(listOf("pm", "uninstall", "com.target.app"), execArgv)
         // 审计链：preflight（dry_run 时）→ approved → executed 三条同 auditId。
         assertEquals(3, audit.events.size)
@@ -240,7 +245,7 @@ class DeviceOpsExecutorTest {
         val writesBefore = channel.argv.count { it.firstOrNull() == "pm" && it.contains("uninstall") && !it.contains("list") }
         val r = ex.execute("package.uninstall", mapOf("package" to "com.target.app"), dryRun = false, token = token)
         assertEquals("STALE_CONFIRM_TOKEN", r.error)
-        assertEquals("true", r.dryRun)
+        assertEquals(true, r.dryRun)
         assertTrue(r.confirmToken != null && r.confirmToken != token)
         val writesAfter = channel.argv.count { it.firstOrNull() == "pm" && it.contains("uninstall") && !it.contains("list") }
         assertEquals("Stale 时绝不执行写 argv", writesBefore, writesAfter)

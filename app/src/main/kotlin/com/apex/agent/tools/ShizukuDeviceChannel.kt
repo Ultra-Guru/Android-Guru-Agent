@@ -77,11 +77,14 @@ class ShizukuDeviceChannel(
             )
             drain.forEach { it.isDaemon = true; it.start() }
 
-            if (req.stdinUtf8 != null) {
+            // 局部快照：跨模块 public API 属性不可 smart cast 进 lambda，
+            // 先落局部 val 再判空（null 载荷根本不起线程）。
+            val stdinPayload = req.stdinUtf8
+            if (stdinPayload != null) {
                 stdinWriter = Thread {
                     runCatching {
                         proc.outputStream.use { out ->
-                            out.write(req.stdinUtf8.toByteArray(Charsets.UTF_8))
+                            out.write(stdinPayload.toByteArray(Charsets.UTF_8))
                             out.flush()
                         }
                     }

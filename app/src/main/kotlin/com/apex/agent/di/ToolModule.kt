@@ -145,15 +145,11 @@ import com.apex.agent.platform.browser.BrowserAgentTools
 import com.apex.agent.platform.browser.BrowserSessionTools
 import com.apex.browser.engine.BrowserEngine
 import com.apex.browser.engine.BrowserTracer
-// #167 加密剪切板金库：仓库/脱敏器/工具集/执行器装饰器
-import com.apex.agent.platform.terminal.io.InputOwner
+// #167 加密剪切板金库：仓库/脱敏器/执行器装饰器（工具集注册体已拆至 ToolModuleVaultRegistration）
 import com.apex.agent.vault.EncryptedPrefsVaultStore
 import com.apex.agent.vault.SecretRedactor
 import com.apex.agent.vault.SecretRedactingExecutor
-import com.apex.agent.vault.VaultAgentTools
 import com.apex.agent.vault.VaultRepository
-import android.content.ClipData
-import android.content.ClipboardManager
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -917,33 +913,15 @@ object ToolModule {
         registry.register(SafeAgentTool(ConnectorSendMessageTool(connectorRegistry, connectorMessenger)))
 
         // ═══ 11c. 加密剪切板金库（#167，4 个工具）═══
-        // 安全契约：Agent 只见标签与备注 —— VaultList 输出脱敏快照；
-        // VaultSave write-only（成功返回仅 label+id，写完自己也读不回）；
-        // VaultPaste 三通道直投（clipboard/terminal/http），返回仅字节数/
-        // 状态码/脱敏响应体，内容永不回显；VaultDelete HIGH 风险门控。
-        // 人类可经抽屉「保险库」页储放 GitHub token / AI API 密钥。
-        VaultAgentTools.all(
-            repository = vaultRepository,
-            clipboardSetter = { text ->
-                // Android 10+ 前台限制：后台写入剪贴板可能抛异常 ——
-                // 由 VaultPasteTool 捕获并转成可自修复的 Error 文本。
-                // #452：CLIPBOARD_SERVICE 极端环境可能为 null —— error() 同样
-                // 被 VaultPasteTool 捕获，与原 as 崩溃路径语义一致。
-                val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                    ?: error("clipboard service unavailable")
-                cm.setPrimaryClip(ClipData.newPlainText("vault", text))
-            },
-            terminalWriter = { sessionId, text ->
-                // kind=RAW：密钥按字节原样进入 PTY（换行已在工具层拼接）。
-                terminalRuntime.write(
-                    sessionId = sessionId,
-                    owner = InputOwner.AGENT,
-                    kind = TerminalRuntime.WriteKind.RAW,
-                    text = text
-                ).fold(onSuccess = { it.written }, onFailure = { false })
-            },
-            httpClient = httpClient
-        ).forEach { registry.register(SafeAgentTool(it)) }
+        // 注册体拆至 [ToolModuleVaultRegistration.kt]（SRP 预算：本文件贴近
+        // 1200 行上限）。安全契约见拆分文件 KDoc（Agent 只见标签不见明文）。
+        registerVaultTools(
+            registry = registry,
+            context = context,
+            httpClient = httpClient,
+            vaultRepository = vaultRepository,
+            terminalRuntime = terminalRuntime
+        )
 
         // ═══ MCP 服务器工具 ═══
         // v3+P83 联合收敛：原实现把 McpCallTool/McpListTool/McpConnectTool 注册了

@@ -52,9 +52,13 @@ class DeviceControlToolsTest {
     }
 
     private fun loadCatalog(): IntentCatalog {
+        // 候选覆盖三种工作目录：仓库根（IDE / 本地 kotlinc 合编）、模块根的
+        // 上一级（Gradle :app 类模块）、模块根两级上（Gradle :core:tool-registry
+        // 纯 JVM 模块 —— Test 任务工作目录即模块根 core/tool-registry）。
         val file = listOf(
             File("app/src/main/assets/device/intents.json"),
-            File("../app/src/main/assets/device/intents.json")
+            File("../app/src/main/assets/device/intents.json"),
+            File("../../app/src/main/assets/device/intents.json")
         ).firstOrNull { it.isFile } ?: error("intents.json 不存在")
         return IntentCatalog.load(file.readText())
     }

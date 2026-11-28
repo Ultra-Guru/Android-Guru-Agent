@@ -75,7 +75,7 @@ class DeviceOpsExecutor(
      * dry_run/confirm_token 两步** —— 与旧 CommandPermissionGate 单弹窗形态
      * 对齐（弹窗里已展示完整影响面，用户确认即拍板）。
      */
-    suspend fun executeLegacy(intentId: String, params: Map<String, String>): DeviceOpResult {
+    override suspend fun executeLegacy(intentId: String, params: Map<String, String>): DeviceOpResult {
         if (!enabled()) return disabled(intentId)
         val intent = catalog.byId(intentId) ?: return unknownIntent(intentId)
         return runIntent(intent, params, dryRun = false, token = null, legacy = true)

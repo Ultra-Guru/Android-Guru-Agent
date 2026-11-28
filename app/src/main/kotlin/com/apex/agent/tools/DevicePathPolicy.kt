@@ -40,9 +40,10 @@ class DevicePathPolicy(
      */
     fun check(path: String, write: Boolean): Decision {
         val normalized = normalize(path)
-        if (normalized != path && normalizeNoTrailing(path) != path) {
-            // 含会被规范化改写的段（. 或冗余分隔）—— 统一拒绝，防混淆。
-            return Decision.Deny("路径含冗余段（./ 或重复分隔），请提供规范化绝对路径：$path")
+        if (normalized != path) {
+            // 含会被规范化改写的段（./、重复分隔或尾分隔符）—— 统一拒绝，
+            // 防混淆与绕过式变体；模型收到文案后用规范化路径重试即可。
+            return Decision.Deny("路径含冗余段（./、重复分隔或尾分隔符），请提供规范化绝对路径：$path")
         }
         if (normalized.contains("..")) {
             return Decision.Deny("路径含 .. 路径穿越，已拒绝")
@@ -81,14 +82,10 @@ class DevicePathPolicy(
         return "/" + out.joinToString("/")
     }
 
-    private fun normalizeNoTrailing(path: String): String {
-        val p = path.trim()
-        return if (p.length > 1 && p.endsWith("/")) p.dropLast(1) else p
-    }
-
-    /** basename（file.delete 的回收区文件名；路径已过白名单）。 */
+    /** basename（file.delete 的回收区文件名；路径已过白名单）。尾部空段
+     * （尾分隔符）如实回退 "file" —— 不猜测目录名，防回收区文件名歧义。 */
     fun basename(path: String): String =
-        path.trimEnd('/').substringAfterLast('/').ifBlank { "file" }
+        path.substringAfterLast('/').ifBlank { "file" }
 
     internal companion object {
         /** 回收区根（S06 I4：软删一律移到这里，返回 undo_token）。 */

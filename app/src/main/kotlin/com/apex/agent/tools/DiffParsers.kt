@@ -137,9 +137,9 @@ internal object DiffParsers {
      * （file.* 的 verify 语义依赖它：软删后 stat 应失败）。
      */
     private fun stat(argv: List<String>, stdout: String, exitCode: Int): Reading {
-        val path = argv.lastOrNull() ?: return Reading(parseIncomplete = true)
+        val path = argv.lastOrNull() ?: return Reading(fields = emptyMap(), parseIncomplete = true)
         if (exitCode != 0) {
-            val fields = mutableMapOf("exists" to "false")
+            val fields = mutableMapOf<String, String?>("exists" to "false")
             if (argv.contains("%n") || argv.any { it.contains("%n") }) fields["name"] = null
             return Reading(fields)
         }

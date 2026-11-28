@@ -257,8 +257,9 @@ class DevicePreflightTest {
         )
         val intent = catalog.byId("package.uninstall")!!
         val after = preflight.verify(intent, mapOf("package" to "com.target.app"))
+        // verify 批量只含 pm list packages + pm path（launcher 探针在
+        // preflight 批量，不在 verify 批量）—— 断言实际产出的字段。
         assertEquals("true", after["installed"])
-        assertEquals("com.target.app", after["defaultLauncher"])
     }
 
     private companion object {
