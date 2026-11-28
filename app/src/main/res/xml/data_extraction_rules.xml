@@ -43,6 +43,24 @@
         <exclude domain="file" path="mcp_config/" />
         <exclude domain="file" path="memory_kit/" />
         <exclude domain="file" path="rootfs/" />
+        <!-- #860（云备份配额）：linux/ 是 Ubuntu 工作区 + 持久 home + 扩展
+             引导目录（TerminalModule：workspaces/home/extensions）—— 单个
+             工作区的 git clone 即数百 MB，多 GB 沙箱数据会直接撞爆
+             Android 12+ 云备份 25MB 配额（备份整体失败）；rootfs/ 上方
+             已排除，本批补齐 linux/ 全目录（设备迁移通道的取舍见下方
+             device-transfer 注）。
+             taskstore/（FileTaskStore 恢复扫描输入）与 hot/（热更 overlay
+             的 staging 暂存与 active-old 过渡位，解压即数十 MB）同为“大目录 +
+             纯可再生状态”（热更内容与任务记录可重新拉取）—— 一并排除，
+             不再吃云备份配额。
+             apex_hot_update_prefs 与 hot/ 目录必须同进退：overlay 不迁移
+             而账本迁移会让新机 effectiveVersionCode 虚高（明明没有热更
+             内容却按已应用上报），错过对应的正式更新提示 —— 两边都不迁，
+             新机重新走一次更新检查即自愈。 -->
+        <exclude domain="file" path="linux/" />
+        <exclude domain="file" path="taskstore/" />
+        <exclude domain="file" path="hot/" />
+        <exclude domain="sharedpref" path="apex_hot_update_prefs.xml" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="sharedpref" path="github_secure_prefs.xml" />
@@ -65,5 +83,13 @@
         <exclude domain="file" path="mcp_config/" />
         <exclude domain="file" path="memory_kit/" />
         <exclude domain="file" path="rootfs/" />
+        <!-- #860（设备迁移）：taskstore/、hot/ 与热更账本 prefs 同
+             cloud-backup 排除（可再生状态，不占迁移带宽；账本与 overlay
+             同进退的理由见上）。linux/ 工作区**保留迁移** —— 代码工作区
+             是用户的劳动成果，D2D 直连没有 25MB 配额，rootfs/ 沙箱本体
+             已在上方排除；云备份才需要为配额砍掉它。 -->
+        <exclude domain="file" path="taskstore/" />
+        <exclude domain="file" path="hot/" />
+        <exclude domain="sharedpref" path="apex_hot_update_prefs.xml" />
     </device-transfer>
 </data-extraction-rules>

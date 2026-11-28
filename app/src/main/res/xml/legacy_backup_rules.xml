@@ -19,7 +19,13 @@
          logs/（工具审计命令串）/ crash/（崩溃现场）/ anr/（看门狗堆栈）/
          mcp_config/（MCP 服务器配置）/ memory_kit/（认知记忆库本体）/
          rootfs/（Ubuntu 沙箱本体）全部不出设备。
-         #818：mcp_host_secure_prefs（token 加密密文，Keystore 绑定）同排除。 -->
+         #818：mcp_host_secure_prefs（token 加密密文，Keystore 绑定）同排除。
+         #860（备份配额，与 Android 12+ cloud-backup 语义对齐）：linux/ 工作区
+         （workspaces/home/extensions，单个 git clone 即数百 MB）、taskstore/
+         恢复扫描输入、hot/ 热更 overlay 暂存位均撞爆本通道 25MB 配额且为
+         可再生状态 —— 一并排除；apex_hot_update_prefs 账本与 hot/ 目录
+         同进退（账本单迁会让新机 effectiveVersionCode 虚高），两边都不迁。
+         注：Android 11- 无 device-transfer 通道，工作区随云备份一并不迁。 -->
     <exclude domain="sharedpref" path="mcp_host_prefs.xml" />
     <exclude domain="sharedpref" path="mcp_host_secure_prefs.xml" />
     <exclude domain="sharedpref" path="pulse_mcp_secure_prefs.xml" />
@@ -30,4 +36,8 @@
     <exclude domain="file" path="mcp_config/" />
     <exclude domain="file" path="memory_kit/" />
     <exclude domain="file" path="rootfs/" />
+    <exclude domain="file" path="linux/" />
+    <exclude domain="file" path="taskstore/" />
+    <exclude domain="file" path="hot/" />
+    <exclude domain="sharedpref" path="apex_hot_update_prefs.xml" />
 </full-backup-content>
