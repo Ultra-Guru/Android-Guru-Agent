@@ -31,9 +31,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -63,6 +63,7 @@ import androidx.compose.ui.text.withStyle
 import coil.compose.AsyncImage
 import com.apex.agent.R
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
@@ -88,13 +89,22 @@ fun MarkdownText(
     // 全文扫描），原先在主线程 remember 内同步执行 —— 长任务流式期间全量
     // 文本逐 token 重解析，真机实测 88s 进程寿命主线程烧 85s CPU → input
     // dispatch ANR → 进程被杀（用户感知为"闪退"；重进后首帧重解析同一全
-    // 文再次 ANR，故"重进仍闪退"）。修复 = 解析迁 Default 线程 + 合窗：
-    // ① 主线程永不阻塞（ANR 根除）；② delay 是挂起点，合窗内新 token 取
-    // 消旧任务，窗口结束只按最新全文解析一次；③ produceState 的 state 跨
-    // 键存活，重解析期间旧结果保持显示，小文本亚毫秒完成无感。
-    val nodes by produceState<List<MarkdownNode>>(emptyList(), markdown) {
-        delay(MARKDOWN_PARSE_DEBOUNCE_MS)
-        value = withContext(Dispatchers.Default) { parseMarkdown(markdown) }
+    // 文再次 ANR，故"重进仍闪退"）。修复 = 解析迁 Default 线程 + 合窗。
+    //
+    // 真机 P1 修复（流式正文防抖饿死）：此前用 produceState(key = markdown) ——
+    // 每个 token 到达都取消上一个「delay(50ms) + 解析」并**重置为空列表**；
+    // token 间隔 < 50ms + 解析耗时时永远解析不完：最终回答阶段正文整段不出、
+    // 只剩光标闪，结束才整块弹出（观感 = 卡死）；滚动回看时气泡还会先空白 50ms。
+    // 现改为「常驻 worker + 合流通道」：解析不随内容变化取消，只对最新全文
+    // 解析；旧结果保持显示直到新结果就绪。
+    val parseRequests = remember { Channel<String>(Channel.CONFLATED) }
+    var nodes by remember { mutableStateOf<List<MarkdownNode>>(emptyList()) }
+    LaunchedEffect(markdown) { parseRequests.trySend(markdown) }
+    LaunchedEffect(Unit) {
+        for (text in parseRequests) {
+            delay(MARKDOWN_PARSE_DEBOUNCE_MS)
+            nodes = withContext(Dispatchers.Default) { parseMarkdown(text) }
+        }
     }
     Column(modifier = modifier.fillMaxWidth()) {
         nodes.forEach { node ->
