@@ -486,7 +486,8 @@ class McpClient(
     }
 
     companion object {
-        fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
+        // #835：经 ToolsHttpPool 派生 —— 共享连接池/调度器，超时语义原值不变。
+        fun defaultClient(): OkHttpClient = com.apex.agent.core.tools.ToolsHttpPool.base.newBuilder()
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
             .writeTimeout(10, TimeUnit.SECONDS)

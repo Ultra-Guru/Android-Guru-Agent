@@ -40,7 +40,8 @@ import java.util.concurrent.TimeUnit
  * - 或 `endpoint` 直接填完整 webhook/hook URL（此时 apiKey 可留空）
  */
 class ConnectorMessenger(
-    private val httpClient: OkHttpClient = OkHttpClient.Builder()
+    // #835：经 ToolsHttpPool 派生 —— 共享连接池/调度器，超时语义原值不变。
+    private val httpClient: OkHttpClient = com.apex.agent.core.tools.ToolsHttpPool.base.newBuilder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)
         .build()

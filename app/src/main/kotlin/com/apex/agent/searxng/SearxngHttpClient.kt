@@ -135,7 +135,8 @@ class SearxngHttpClient(
 
         private val json = Json { ignoreUnknownKeys = true }
 
-        fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
+        // #835：经 AppHttpPool 派生 —— 共享连接池/调度器，超时与快速失败语义原值不变。
+        fun defaultClient(): OkHttpClient = com.apex.agent.net.AppHttpPool.base.newBuilder()
             .connectTimeout(2, TimeUnit.SECONDS)
             .readTimeout(5, TimeUnit.SECONDS)
             .callTimeout(6, TimeUnit.SECONDS)

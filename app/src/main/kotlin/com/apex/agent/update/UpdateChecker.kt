@@ -214,7 +214,8 @@ const val PATCH_INDEX_URL = PatchIndex.PATCH_INDEX_URL
  * 语义在调用点用 newBuilder 派生，不另起炉灶）。
  */
 object UpdateHttp {
-    val client: OkHttpClient = OkHttpClient.Builder()
+    // #835：经 AppHttpPool 派生 —— 共享连接池/调度器，超时语义原值不变。
+    val client: OkHttpClient = com.apex.agent.net.AppHttpPool.base.newBuilder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)
         .build()
