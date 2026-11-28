@@ -12,6 +12,7 @@
 #include <chrono>
 #include <atomic>
 #include <csignal>
+#include <cerrno>
 
 using namespace apex;
 
@@ -184,6 +185,80 @@ int main() {
         }
         CHECK(refusedAtIdle, "no-foreground-job signal refused at idle prompt");
         eng.closeSession(id);
+    }
+
+    // ── #842：setsid 守护孙进程清扫（close 的 /proc 后代快照 + 补杀）────
+    // 事故形态：孙进程经 setsid 自立 session/pgid —— kill(-fg)/kill(-pid_)
+    // 两组信号均不可达，旧实现 close 后守护进程残活（泄漏 CPU/内存直至重启）。
+    // 修复：close() 信号梯度**前**经 /proc children 快照后代，梯度后逐 pid
+    // SIGKILL 兜底。本测试在 Linux 主机验证（Android 内核同样提供 /proc
+    // children —— CONFIG_PROC_CHILDREN 标配）。
+    {
+        printf("[#842] setsid grandchild sweep on close\n");
+        PtyEngine& eng = PtyEngine::instance();
+        // 交互 bash（作业控制 shell 常驻）—— 与 T82 测试同款夹具：Linux host
+        // 必须显式传 PATH（native 安全默认 PATH 是 Android 侧）。
+        std::vector<std::pair<std::string, std::string>> hostEnv{{"PATH", "/usr/bin:/bin:/usr/sbin:/sbin"}};
+        int id = eng.createSessionArgv({"/bin/bash", "-i"}, "", hostEnv, 24, 80);
+        CHECK(id > 0, "interactive session created");
+        // bash 初始化（prompt / 作业控制）
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        // 守护孙进程（#842 的可清扫逃逸形态）：后台作业 bash -c 的**子进程
+        // python 自行 setsid**（非组长 → 成功；直接后台作业自己 setsid 会因
+        // 作业控制组长身份 EPERM）。python 有自有 session/pgid —— kill(-fg)
+        // /kill(-pid_) 两组信号全部不可达；但其父 bash -c 存活等待，/proc
+        // children 树（shell → bash -c → python）仍可达 —— 正是清扫目标形态。
+        // （util-linux setsid 二进制派的孤儿被 init 收养，任何 pid 树清扫都
+        // 不可达 —— 本清扫不承诺该形态，与 Termux 同款边界。）
+        const char* pidFile = "/tmp/apex_setsid_sweep_pid";
+        const char* daemonScript = "/tmp/apex_setsid_daemon.py";
+        unlink(pidFile);
+        // 守护脚本由测试直写（避开 pty 引号转义矩阵）：进程自行 setsid 后
+        // 落 pid 文件并长眠 —— bash 的直接子进程（/proc children 可达）。
+        {
+            FILE* f = fopen(daemonScript, "w");
+            CHECK(f != nullptr, "daemon script writable");
+            if (f != nullptr) {
+                fprintf(f, "import os, sys, time\n");
+                fprintf(f, "os.setsid()\n");
+                fprintf(f, "open(sys.argv[1], 'w').write(str(os.getpid()))\n");
+                fprintf(f, "time.sleep(300)\n");
+                fclose(f);
+            }
+        }
+        char cmd[512];
+        // `; :` 尾缀防 bash -c 单命令 exec 优化（否则 python 顶替作业组长
+        // 身份，setsid EPERM）；复合命令强制真 fork —— python 为组长之子。
+        snprintf(cmd, sizeof(cmd),
+                 "bash -c 'python3 %s %s; :' >/dev/null 2>&1 &\n",
+                 daemonScript, pidFile);
+        eng.write(id, cmd, strlen(cmd));
+        // 等 pid 文件落地（守护进程已起）。
+        int daemonPid = -1;
+        for (int i = 0; i < 200; ++i) {
+            FILE* f = fopen(pidFile, "r");
+            if (f != nullptr) {
+                if (fscanf(f, "%d", &daemonPid) != 1) daemonPid = -1;
+                fclose(f);
+                if (daemonPid > 0) break;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+        CHECK(daemonPid > 0, "setsid grandchild spawned and reported pid");
+        if (daemonPid > 0) {
+            CHECK(kill(daemonPid, 0) == 0, "grandchild alive before close");
+            eng.closeSession(id);
+            // close 内的补杀有界等待后应已生效 —— 有界重试（最多 2s）容忍调度抖动。
+            bool reaped = false;
+            for (int i = 0; i < 400; ++i) {
+                if (kill(daemonPid, 0) != 0 && errno == ESRCH) { reaped = true; break; }
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            }
+            CHECK(reaped, "setsid grandchild reaped by close() sweep");
+            unlink(pidFile);
+        } else {
+            eng.closeSession(id);
+        }
     }
 
     printf("== %s (%d failures) ==\n", g_failures == 0 ? "ALL PASS" : "FAILURES", g_failures);

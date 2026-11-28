@@ -403,6 +403,38 @@ bool PtySession::sendSignal(int sig) {
     return killProcessGroup(sig);
 }
 
+// #842：递归收集后代进程 pid（经 /proc/<pid>/task/<tid>/children，
+// Linux CONFIG_PROC_CHILDREN —— Android 内核标配）。setsid/nohup 守护化的
+// 孙进程脱离 shell 进程组（两组 kill 信号都不可达），close 需在信号梯度
+// **之前**（进程树尚完整）快照后代清单，梯度结束后逐 pid 补杀。
+// 防环：收集过的 pid 不重复入表（kill 侧同样跳过自身 pid_）。
+static void collectDescendants(pid_t pid, std::vector<pid_t>& out) {
+    char taskDir[64];
+    snprintf(taskDir, sizeof(taskDir), "/proc/%d/task", pid);
+    DIR* dir = opendir(taskDir);
+    if (dir == nullptr) return;
+    struct dirent* e;
+    while ((e = readdir(dir)) != nullptr) {
+        if (e->d_name[0] == '.') continue;
+        char childrenPath[128];
+        snprintf(childrenPath, sizeof(childrenPath),
+                 "/proc/%d/task/%s/children", pid, e->d_name);
+        FILE* f = fopen(childrenPath, "r");
+        if (f == nullptr) continue;
+        int child = 0;
+        while (fscanf(f, "%d", &child) == 1) {
+            if (child <= 0 || child == pid) continue;
+            if (std::find(out.begin(), out.end(), static_cast<pid_t>(child)) != out.end()) {
+                continue; // 已收集（图环路防御）
+            }
+            out.push_back(static_cast<pid_t>(child));
+            collectDescendants(static_cast<pid_t>(child), out);
+        }
+        fclose(f);
+    }
+    closedir(dir);
+}
+
 bool PtySession::killProcessGroup(int sig) {
     if (pid_ <= 0) return false;
     bool delivered = false;
@@ -455,6 +487,11 @@ void PtySession::close() {
     // 注意顺序：先向整个进程组发信号，最后才关闭 master fd ——
     // killProcessGroup() 需要 master fd 做 tcgetpgrp()。
     if (pid_ > 0 && alive_) {
+        // #842：信号梯度**前**快照后代进程树（setsid 守护孙进程此时仍在
+        // 树上，梯度结束后才逃逸不可追）—— /proc children 递归收集。
+        std::vector<pid_t> escapedDescendants;
+        collectDescendants(pid_, escapedDescendants);
+
         // 先尝试优雅终止整个进程组（shell + child + grandchild）。
         // T81 (N-5)：等待改为有界轮询（进程早退即返回，不再固定睡满 50/100ms）。
         killProcessGroup(SIGHUP);
@@ -475,6 +512,16 @@ void PtySession::close() {
         for (int i = 0; i < 100 && alive_.load(std::memory_order_acquire); ++i) {
             usleep(2000);
             reapChild();
+        }
+
+        // #842：逃逸后代补杀 —— setsid/nohup 守护化的孙进程（自有 session/
+        // pgid，kill(-fg)/kill(-pid_) 两组信号均不可达）在此逐 pid SIGKILL
+        // 兜底。best-effort：ESRCH（已死）忽略；pid 复用竞态窗口（快照至此刻
+        // ~300ms）与既有 killProcessGroup 语义同级容忍，pid 空间顺序分配下
+        // 窗口内复用概率可忽略。
+        for (pid_t d : escapedDescendants) {
+            if (d == pid_) continue;
+            kill(d, SIGKILL);
         }
         pid_ = -1;
     }
