@@ -97,6 +97,11 @@ object ToolTierPolicy {
 
         // ── apps & device ──
         "AppList", "AppInfo", "AppLaunch",
+        // DCP 设备控制面（S07）：结构化设备操作统一入口 + 能力自省 —— 只增这 2 个
+        // （DeviceAuditQuery 留 CATALOG 走 ToolSearch 渐进披露，低频观测面）。
+        // 设备增删改优先 DeviceOps（preflight / 守卫 / token / verify 全链），
+        // ShellExecute 是自由文本逃生舱。
+        "DeviceOps", "DeviceCapability",
         // #171：GetTimeLegacy → time（四族合并后唯一时间入口）；
         // #172：ContextRecap 入 CORE —— 长会话自救的关键工具（迷路时一次
         // 调用重建全景，无需 ToolSearch 两跳）。

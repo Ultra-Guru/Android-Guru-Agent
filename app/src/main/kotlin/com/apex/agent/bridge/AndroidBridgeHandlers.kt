@@ -5,7 +5,12 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.os.BatteryManager
 import android.os.Build
+import com.apex.agent.core.tools.device.DeviceOpsPort
 import com.apex.agent.platform.TerminalBridge.GuestBridgeHandler
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonObject
 
 /**
  * T82 — apexctl 桥的 Android 侧 handler 集（Termux:API 等价物的宿主实现）。
@@ -16,6 +21,7 @@ import com.apex.agent.platform.TerminalBridge.GuestBridgeHandler
  * apexctl clipboard set '"hello from ubuntu"'
  * apexctl device-info
  * apexctl battery
+ * apexctl device '{"intent":"package.list"}'
  * ```
  *
  * Agent 侧同一 handler 集经 `TerminalBridge call` 直连（无文件往返）。
@@ -80,10 +86,59 @@ object AndroidBridgeHandlers {
         }
     }
 
-    /** 注册集（TerminalModule 注入 GuestBridgeService）。 */
-    fun all(context: Context): List<GuestBridgeHandler> = listOf(
+    /**
+     * S09 —— DCP 设备操作的 guest 侧对称入口：`apexctl device <DeviceOps-JSON>`。
+     *
+     * argsJson **就是** DeviceOps 的入参 JSON（intent / params / dry_run /
+     * confirm_token），不另造协议；guest 侧与 Agent 侧走**同一个**
+     * [DeviceOpsPort]（同一 preflight / gate / 审计）—— 人工确认同样适用
+     * （不可逆意图同样必须 dry_run → token → 执行，guest 里没有免确认通道）。
+     */
+    internal class Device(private val port: DeviceOpsPort) : GuestBridgeHandler {
+        override val action = "device"
+        override val description =
+            "Structured device ops (package.* / file.* / system.* / probe.*). " +
+                "args: DeviceOps JSON, e.g. '{\"intent\":\"package.list\"}' or '{\"intent\":\"package.uninstall_for_user\",\"params\":{\"package\":\"x\"},\"dry_run\":true}'"
+
+        override suspend fun handle(argsJson: String): String {
+            val trimmed = argsJson.trim().removeSurrounding("\"")
+            if (trimmed.equals("status", ignoreCase = true) || trimmed.isEmpty()) {
+                // 档位摘要：probe.id 是只读意图，零副作用（与 DeviceCapability 同源通道）。
+                val r = port.execute("probe.id", emptyMap(), dryRun = false, token = null)
+                return r.toJson()
+            }
+            val json = try {
+                Json.parseToJsonElement(trimmed).jsonObject
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                throw IllegalArgumentException("args 必须是 DeviceOps JSON（intent/params/dry_run/confirm_token）：${e.message}")
+            }
+            val intentId = (json["intent"] as? JsonPrimitive)?.takeIf { it.isString }?.content
+                ?: throw IllegalArgumentException("缺少 'intent' 字段")
+            val params = ((json["params"] as? JsonObject) ?: JsonObject(emptyMap()))
+                .mapValues { (_, v) ->
+                    (v as? JsonPrimitive)?.content
+                        ?: throw IllegalArgumentException("params 值必须是字符串")
+                }
+            val dryRun = (json["dry_run"] as? JsonPrimitive)?.content?.toBooleanStrictOrNull() ?: false
+            val token = (json["confirm_token"] as? JsonPrimitive)?.takeIf { it.isString }?.content
+            val result = port.execute(intentId, params, dryRun, token)
+            return result.toJson()
+        }
+    }
+
+    /**
+     * 注册集（TerminalModule 注入 GuestBridgeService）。
+     * S09 起第 4 个 handler：`device`（DCP 结构化设备操作）。
+     */
+    fun all(context: Context, port: DeviceOpsPort): List<GuestBridgeHandler> = listOf(
         ClipboardGet(context),
         DeviceInfo(context),
-        Battery(context)
+        Battery(context),
+        deviceBridge(port)
     )
+
+    /** device handler 的独立工厂（注册与 JVM 测试共用 —— 不需 Context）。 */
+    fun deviceBridge(port: DeviceOpsPort): GuestBridgeHandler = Device(port)
 }

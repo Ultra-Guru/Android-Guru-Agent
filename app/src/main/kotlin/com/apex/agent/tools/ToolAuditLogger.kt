@@ -51,7 +51,30 @@ class ToolAuditLogger @Inject constructor(
         val durationMs: Long? = null,
         val success: Boolean? = null,
         val exitCode: Int? = null,
-        val detail: String? = null
+        val detail: String? = null,
+        // ── DCP 设备控制面扩展（S10，尾部追加 + 默认值，历史 jsonl 仍可解析）──
+        /** 意图 id（DeviceOps 专属；一次 dry_run→approved→executed 用同一 auditId 串联）。 */
+        val intentId: String? = null,
+        /** manifest 声明的风险级（READ / LOW / MEDIUM / HIGH / CRITICAL）。 */
+        val risk: String? = null,
+        /** 执行时的权限档位（ROOT / SHIZUKU / NORMAL_SHELL）。 */
+        val privilegeTier: String? = null,
+        /** 执行通道上报的 uid（如 2000）。 */
+        val uid: Int? = null,
+        /** 是否 dry-run（true = 只跑只读 preflight，零副作用）。 */
+        val dryRun: Boolean? = null,
+        /** 确认令牌指纹（只存前 8 位，不落完整令牌防重放）。 */
+        val confirmToken: String? = null,
+        /** preflight 解析出的 before 快照（截断）。 */
+        val diffBefore: String? = null,
+        /** verify 复探的 after 快照（截断）。 */
+        val diffAfter: String? = null,
+        /** 是否可逆（manifest 声明；purge=true 时执行面传 false）。 */
+        val reversible: Boolean? = null,
+        /** 回滚提示（manifest rollbackHint，面向模型）。 */
+        val rollbackHint: String? = null,
+        /** 本次操作的审计 id（多事件串联键）。 */
+        val auditId: String? = null
     )
 
     /** 追加一条审计记录（文件 + Logcat 双写；失败静默降级为 Logcat-only）。 */
@@ -66,6 +89,19 @@ class ToolAuditLogger @Inject constructor(
             event.success?.let { put("success", it) }
             event.exitCode?.let { put("exitCode", it) }
             event.detail?.let { put("detail", it.take(DETAIL_TRUNCATE)) }
+            // ── DCP 扩展字段（全部可选；历史行缺字段照样可读）──
+            event.intentId?.let { put("intentId", it) }
+            event.risk?.let { put("risk", it) }
+            event.privilegeTier?.let { put("privilegeTier", it) }
+            event.uid?.let { put("uid", it) }
+            event.dryRun?.let { put("dryRun", it) }
+            // 安全字段：confirmToken 只落指纹前 8 位（防重放，S10 任务清单）。
+            event.confirmToken?.let { put("confirmToken", it.take(8)) }
+            event.diffBefore?.let { put("diffBefore", it.take(DIFF_TRUNCATE)) }
+            event.diffAfter?.let { put("diffAfter", it.take(DIFF_TRUNCATE)) }
+            event.reversible?.let { put("reversible", it) }
+            event.rollbackHint?.let { put("rollbackHint", it.take(DETAIL_TRUNCATE)) }
+            event.auditId?.let { put("auditId", it) }
         }
         val line = json.toString()
         android.util.Log.i(TAG, line)
@@ -111,7 +147,19 @@ class ToolAuditLogger @Inject constructor(
         val durationMs: Long? = null,
         val success: Boolean? = null,
         val exitCode: Int? = null,
-        val detail: String? = null
+        val detail: String? = null,
+        // ── DCP 扩展（S10；尾部追加 + 默认值，旧 jsonl 照常解析）──
+        val intentId: String? = null,
+        val risk: String? = null,
+        val privilegeTier: String? = null,
+        val uid: Int? = null,
+        val dryRun: Boolean? = null,
+        val confirmToken: String? = null,
+        val diffBefore: String? = null,
+        val diffAfter: String? = null,
+        val reversible: Boolean? = null,
+        val rollbackHint: String? = null,
+        val auditId: String? = null
     ) {
         /** 失败判定：显式 success=false，或决策/拒绝类失败关键字。 */
         val isFailure: Boolean
@@ -139,33 +187,53 @@ class ToolAuditLogger @Inject constructor(
     /** 审计文件路径（诊断页文件区展示 / 分享用）。 */
     fun auditLogFile(): File = logFile
 
-    private fun parseLine(line: String): AuditEntry? {
-        if (line.isBlank()) return null
-        return runCatching {
-            val o = JSONObject(line)
-            AuditEntry(
-                ts = o.optLong("ts", 0L),
-                tool = o.optString("tool", ""),
-                decision = o.optString("decision", ""),
-                tier = o.optString("tier").takeIf { it.isNotBlank() },
-                command = o.optString("command").takeIf { it.isNotBlank() },
-                durationMs = if (o.has("durationMs")) o.optLong("durationMs") else null,
-                success = if (o.has("success")) o.optBoolean("success") else null,
-                exitCode = if (o.has("exitCode")) o.optInt("exitCode") else null,
-                detail = o.optString("detail").takeIf { it.isNotBlank() }
-            )
-        }.getOrNull()
-    }
+    private fun parseLine(line: String): AuditEntry? = parseLineInternal(line)
 
-    private companion object {
+    // internal（非 private）：S10 兼容测试直接调 parseLineInternal 验证旧行可读。
+    internal companion object {
         const val TAG = "ToolAudit"
         const val MAX_BYTES = 256L * 1024
         const val KEEP_BYTES = 128L * 1024
         const val COMMAND_TRUNCATE = 512
         const val DETAIL_TRUNCATE = 200
+        /** DCP diff 快照截断（before/after 可读即可，防单条撑爆轮转预算）。 */
+        const val DIFF_TRUNCATE = 256
         /** 读取上限（防异常大文件拖死诊断页；文件本体已被 rotate 压在 128KB 内）。 */
         const val MAX_READ_LINES = 2000
         /** 决策字段中的失败关键字（isFailure 判定，与写入侧 decision 词表对齐）。 */
         val FAILURE_DECISIONS = setOf("failed", "deny", "denied_by_user", "error", "timeout")
+
+        /**
+         * S10 兼容测试入口：旧格式（扩展字段缺席）与新格式 jsonl 均可解析；
+         * JVM 直测无需 Context（ToolAuditLoggerCompatTest）。
+         */
+        internal fun parseLineInternal(line: String): AuditEntry? {
+            if (line.isBlank()) return null
+            return runCatching {
+                val o = JSONObject(line)
+                AuditEntry(
+                    ts = o.optLong("ts", 0L),
+                    tool = o.optString("tool", ""),
+                    decision = o.optString("decision", ""),
+                    tier = o.optString("tier").takeIf { it.isNotBlank() },
+                    command = o.optString("command").takeIf { it.isNotBlank() },
+                    durationMs = if (o.has("durationMs")) o.optLong("durationMs") else null,
+                    success = if (o.has("success")) o.optBoolean("success") else null,
+                    exitCode = if (o.has("exitCode")) o.optInt("exitCode") else null,
+                    detail = o.optString("detail").takeIf { it.isNotBlank() },
+                    intentId = o.optString("intentId").takeIf { it.isNotBlank() },
+                    risk = o.optString("risk").takeIf { it.isNotBlank() },
+                    privilegeTier = o.optString("privilegeTier").takeIf { it.isNotBlank() },
+                    uid = if (o.has("uid")) o.optInt("uid") else null,
+                    dryRun = if (o.has("dryRun")) o.optBoolean("dryRun") else null,
+                    confirmToken = o.optString("confirmToken").takeIf { it.isNotBlank() },
+                    diffBefore = o.optString("diffBefore").takeIf { it.isNotBlank() },
+                    diffAfter = o.optString("diffAfter").takeIf { it.isNotBlank() },
+                    reversible = if (o.has("reversible")) o.optBoolean("reversible") else null,
+                    rollbackHint = o.optString("rollbackHint").takeIf { it.isNotBlank() },
+                    auditId = o.optString("auditId").takeIf { it.isNotBlank() }
+                )
+            }.getOrNull()
+        }
     }
 }

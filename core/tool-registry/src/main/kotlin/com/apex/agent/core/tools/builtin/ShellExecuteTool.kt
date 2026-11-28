@@ -52,6 +52,11 @@ class ShellExecuteTool(
         - {"command": "pm list packages -3 | head -20", "max_lines": 25}
         - {"command": "df -h && free -m"}
         - {"command": "cat /proc/cpuinfo | grep 'model name' | head -4"}
+
+        NOTE: this tool is a FREE-TEXT escape hatch (commands run as raw shell
+        strings). For device mutations (uninstall/disable apps, /sdcard file
+        operations, system settings) prefer the DeviceOps tool — structured
+        intents with dry-run, confirm tokens, guards and audit.
     """.trimIndent()
 
     override val parametersSchema = """

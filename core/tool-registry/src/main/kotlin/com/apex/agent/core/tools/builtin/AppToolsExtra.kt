@@ -1,6 +1,8 @@
 package com.apex.agent.core.tools.builtin
 
 import com.apex.agent.core.tools.AgentTool
+import com.apex.agent.core.tools.device.DeviceOpResult
+import com.apex.agent.core.tools.device.DeviceOpsPort
 import kotlinx.serialization.json.*
 
 /**
@@ -47,9 +49,15 @@ class AppInstallTool(
  *
  * Uninstalls an app by package name.
  * WARNING: This removes the app and its data permanently (unless keep_data=true).
+ *
+ * S05：DCP 启用时内部委托 [DeviceOpsPort.executeLegacy]（package.uninstall）
+ * —— preflight（系统应用/设备管理器/桌面/自身四重守卫）+ 语义分级确认 +
+ * 执行后复探；返回文本形态保持向后兼容（Success / Error: 前缀）。
+ * `dcp.enabled=false` 或未注入 port 时走原 shellExec 链，行为与旧版一致。
  */
 class AppUninstallTool(
-    private val shellExecutor: suspend (String) -> String
+    private val shellExecutor: suspend (String) -> String,
+    private val deviceOps: DeviceOpsPort? = null
 ) : AgentTool {
 
     override val id = "AppUninstall"
@@ -82,6 +90,19 @@ class AppUninstallTool(
         }
         val keepData = json["keep_data"]?.jsonPrimitive?.booleanOrNull ?: false
 
+        // S05：DCP 委托优先 —— 结构化 argv（不经 sh -c）+ preflight 守卫 +
+        // 执行后复探；DCP 未启用时 executeLegacy 返回 DCP_DISABLED，走旧链。
+        if (deviceOps != null) {
+            val params = buildMap {
+                put("package", pkg)
+                if (keepData) put("keep_data", "-k")
+            }
+            val result = deviceOps.executeLegacy("package.uninstall", params)
+            if (result.error != "DCP_DISABLED") {
+                return result.legacyText()
+            }
+        }
+
         val cmd = if (keepData) "pm uninstall -k $pkg" else "pm uninstall $pkg"
         return shellExecutor(cmd)
     }
@@ -89,9 +110,13 @@ class AppUninstallTool(
 
 /**
  * 强制停止应用
+ *
+ * S05：DCP 启用时内部委托 [DeviceOpsPort.executeLegacy]（package.force_stop）
+ * —— argv 直调 + 语义分级（MEDIUM 可逆）；返回文本形态向后兼容。
  */
 class AppForceStopTool(
-    private val shellExecutor: suspend (String) -> String
+    private val shellExecutor: suspend (String) -> String,
+    private val deviceOps: DeviceOpsPort? = null
 ) : AgentTool {
 
     override val id = "AppForceStop"
@@ -114,8 +139,29 @@ class AppForceStopTool(
         if (!ShellQuote.isValidPackageName(pkg)) {
             return "Error: invalid package name '$pkg' (must match ^[A-Za-z0-9._]+\$)"
         }
+
+        if (deviceOps != null) {
+            val result = deviceOps.executeLegacy("package.force_stop", mapOf("package" to pkg))
+            if (result.error != "DCP_DISABLED") {
+                return result.legacyText()
+            }
+        }
+
         return shellExecutor("am force-stop $pkg")
     }
+}
+
+/**
+ * S05 旧工具委托的返回文本兼容层：保持旧版 Success / Error 前缀形态，
+ * 旧提示词与既有消费者零改动。
+ */
+internal fun DeviceOpResult.legacyText(): String = when {
+    ok -> rawOutput?.takeIf { it.isNotBlank() } ?: "Success"
+    error != null -> buildString {
+        append("Error: ").append(error)
+        hint?.let { append(" — ").append(it) }
+    }
+    else -> "Error: 命令执行失败"
 }
 
 /**

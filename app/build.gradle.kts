@@ -342,6 +342,8 @@ dependencies {
     // Unit testing (pure-JVM src/test)
     testImplementation(libs.junit)
     testImplementation(libs.coroutines.test)
+    // DCP ToolAuditLogger 兼容测试：org.json 真实实现前置于 android.jar 桩
+    testImplementation(libs.org.json)
     // #787：androidTest 依赖走 version catalog（与 platform/terminal 同款
     // 别名 libs.androidx.test.runner / libs.androidx.test.ext.junit），
     // 不再硬编码版本绕过目录。

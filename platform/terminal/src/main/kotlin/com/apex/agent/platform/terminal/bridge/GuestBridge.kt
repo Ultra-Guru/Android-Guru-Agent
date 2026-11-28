@@ -118,7 +118,28 @@ class GuestBridgeService(
             script.setExecutable(true, false)
             actions.add("installed $SCRIPT_NAME (guest: /root/.apex/bin/$SCRIPT_NAME)")
         }
+        actions += ensureShellHintInstalled()
         return actions
+    }
+
+    /**
+     * S07（PTY 断点 GuidedBridge 决策）：guest 交互会话内 Android 命令
+     * （pm/am/dumpsys/…）必然 `not found`（PTY 走 libproot → bash -i，无
+     * TerminalExec 的自动回落）。在持久化 home 的 .bashrc 里幂等安装一个
+     * **托管块**（标记对包裹，已存在不重复写）：command_not_found_handle 对
+     * Android 专有命令给出「改用 apexctl device」引导（返回 127 语义不变）。
+     *
+     * 回滚 = 删除该托管块（或整个 .apex 目录，幂等安装会重建）。
+     */
+    private fun ensureShellHintInstalled(): List<String> {
+        val bashrc = File(bridgeRoot.parentFile.parentFile, ".bashrc")
+        return runCatching {
+            if (bashrc.isFile && bashrc.readText().contains(HINT_MARKER_BEGIN)) {
+                return emptyList()
+            }
+            bashrc.appendText("\n$HINT_MARKER_BEGIN\n${ApexBridgeScript.SHELL_HINT}\n$HINT_MARKER_END\n")
+            listOf("installed .bashrc android-command hint (guest: /root/.bashrc)")
+        }.getOrDefault(emptyList())
     }
 
     /** 启动轮询（幂等）。 */
@@ -191,6 +212,10 @@ class GuestBridgeService(
 
     companion object {
         const val SCRIPT_NAME = "apexctl"
+
+        /** .bashrc 托管块标记（幂等安装 / 回滚定位用）。 */
+        internal const val HINT_MARKER_BEGIN = "# >>> apex device-bridge (managed) >>>"
+        internal const val HINT_MARKER_END = "# <<< apex device-bridge (managed) <<<"
     }
 }
 
@@ -198,6 +223,10 @@ class GuestBridgeService(
  * guest 侧 `apexctl` 脚本（POSIX sh —— Ubuntu base 的 dash/bash 均可执行）。
  * 写到 host `<home>/.apex/bin/apexctl`，经 home bind 在 guest 内为
  * `/root/.apex/bin/apexctl`。
+ *
+ * S09 起新增 `device` action：`apexctl device '<DeviceOps JSON>'` —— 与
+ * Agent 侧 DeviceOps 工具走**同一个** DeviceOpsPort（同一 preflight /
+ * gate / 审计；不可逆意图在 guest 里同样必须 dry_run → confirm_token → 执行）。
  */
 object ApexBridgeScript {
     val SCRIPT = """
@@ -206,6 +235,8 @@ object ApexBridgeScript {
         # Usage: apexctl <action> [argsJson]
         #   e.g. apexctl clipboard get
         #        apexctl clipboard set '"hello from ubuntu"'
+        #        apexctl device '{"intent":"package.list"}'
+        #        apexctl device '{"intent":"package.uninstall_for_user","params":{"package":"x"},"dry_run":true}'
         REQ=${'$'}HOME/.apex/bridge/req
         RESP=${'$'}HOME/.apex/bridge/resp
         action="${'$'}1"; args="${'$'}2"; [ -n "${'$'}args" ] || args=null
@@ -223,5 +254,23 @@ object ApexBridgeScript {
         done
         echo '{"ok":false,"error":"BRIDGE_TIMEOUT"}' >&2
         exit 1
+    """.trimIndent()
+
+    /**
+     * .bashrc 托管块内容（S07 PTY 断点引导）：Android 专有命令 not found 时
+     * 给出 apexctl device 引导；其余命令保持 bash 原生 127 语义。
+     */
+    val SHELL_HINT = """
+        command_not_found_handle() {
+          case "${'$'}1" in
+            pm|am|dumpsys|cmd|settings|getprop|setprop|appops|input|wm|screencap|screenrecord|logcat|service|content|sm|atrace)
+              echo "apex: '${'$'}1' is an Android host command and does not exist in this Ubuntu session." >&2
+              echo "apex: use the DeviceOps tool, or run: apexctl device '{\"intent\":\"probe.id\"}' (DeviceOps JSON)" >&2
+              return 127
+              ;;
+          esac
+          echo "bash: ${'$'}1: command not found" >&2
+          return 127
+        }
     """.trimIndent()
 }

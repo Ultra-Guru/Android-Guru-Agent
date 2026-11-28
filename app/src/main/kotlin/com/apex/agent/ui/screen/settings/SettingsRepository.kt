@@ -770,4 +770,12 @@ data class AgentSettings(
      * Agent 侧经 AgentSettingSet 可改（设置 JSON 字段直通）。
      */
     val extensionAutoSync: Boolean = false,
+
+    // ═══ DCP 设备控制面（S07 feature flag）═══
+    // 默认关 = 全仓行为与 main 完全一致（旧 19 个设备工具走原 shellExec 链，
+    // DeviceOps 返回结构化 DCP_DISABLED 提示，不静默降级旧链 —— 审计链不断）。
+    // 实时读取纪律：消费方（DeviceOpsExecutor / 旧工具委托）经
+    // settingsRepository.agentSettings.value.dcpEnabled 每次调用即时读取，
+    // 禁止构造期快照（对齐 PermissionMode / CommandPolicyStore 惯例）。
+    val dcpEnabled: Boolean = false,
 )

@@ -1,0 +1,565 @@
+{
+  "schema": "apex-device-intents/v1",
+  "defaults": {
+    "requiredPrivilege": "SHIZUKU",
+    "confirmWindowMs": 300000,
+    "outputBudgetBytes": 1048576
+  },
+  "intents": [
+    {
+      "id": "probe.id",
+      "argv": ["id"],
+      "risk": "READ",
+      "requiredPrivilege": "NORMAL_SHELL",
+      "reversible": true,
+      "preflight": [],
+      "verify": [],
+      "rollbackHint": null,
+      "blastRadius": "只读：当前进程身份（uid/gid/groups）",
+      "params": []
+    },
+    {
+      "id": "probe.getprop",
+      "argv": ["getprop", "{key}"],
+      "risk": "READ",
+      "requiredPrivilege": "NORMAL_SHELL",
+      "reversible": true,
+      "preflight": [],
+      "verify": [],
+      "rollbackHint": null,
+      "blastRadius": "只读：系统属性（key 为空时列出全部）",
+      "params": [
+        {"name": "key", "kind": "setting-key", "required": false, "default": ""}
+      ]
+    },
+    {
+      "id": "probe.selinux",
+      "argv": ["getenforce"],
+      "risk": "READ",
+      "requiredPrivilege": "NORMAL_SHELL",
+      "reversible": true,
+      "preflight": [],
+      "verify": [],
+      "rollbackHint": null,
+      "blastRadius": "只读：SELinux 模式",
+      "params": []
+    },
+    {
+      "id": "probe.storage",
+      "argv": ["df", "-h", "{path}"],
+      "risk": "READ",
+      "requiredPrivilege": "SHIZUKU",
+      "reversible": true,
+      "preflight": [],
+      "verify": [],
+      "rollbackHint": null,
+      "blastRadius": "只读：指定路径的存储用量",
+      "pathScope": ["/sdcard", "/storage/emulated/0", "/data/local/tmp"],
+      "params": [
+        {"name": "path", "kind": "path", "required": false, "default": "/sdcard"}
+      ]
+    },
+    {
+      "id": "package.list",
+      "argv": ["pm", "list", "packages", "{filter}"],
+      "risk": "READ",
+      "requiredPrivilege": "NORMAL_SHELL",
+      "reversible": true,
+      "preflight": [],
+      "verify": [],
+      "rollbackHint": null,
+      "blastRadius": "只读：枚举已安装包（filter 为空时列全部）",
+      "params": [
+        {"name": "filter", "kind": "text", "required": false, "default": ""}
+      ]
+    },
+    {
+      "id": "package.path",
+      "argv": ["pm", "path", "{package}"],
+      "risk": "READ",
+      "requiredPrivilege": "NORMAL_SHELL",
+      "reversible": true,
+      "preflight": [],
+      "verify": [],
+      "rollbackHint": null,
+      "blastRadius": "只读：包 APK 路径",
+      "params": [
+        {"name": "package", "kind": "package"}
+      ]
+    },
+    {
+      "id": "package.inspect",
+      "argv": ["dumpsys", "package", "{package}"],
+      "risk": "READ",
+      "requiredPrivilege": "SHIZUKU",
+      "reversible": true,
+      "preflight": [],
+      "verify": [],
+      "rollbackHint": null,
+      "blastRadius": "只读：包元数据（版本 / 系统应用 / 设备管理器 / 安装用户）",
+      "params": [
+        {"name": "package", "kind": "package"}
+      ]
+    },
+    {
+      "id": "package.uninstall",
+      "argv": ["pm", "uninstall", "{keep_data}", "{package}"],
+      "risk": "CRITICAL",
+      "requiredPrivilege": "SHIZUKU",
+      "reversible": false,
+      "preflight": [
+        ["pm", "list", "packages", "{package}"],
+        ["dumpsys", "package", "{package}"],
+        ["dumpsys", "device_policy"],
+        ["cmd", "shortcut", "get-default-launcher"]
+      ],
+      "verify": [
+        ["pm", "list", "packages", "{package}"],
+        ["pm", "path", "{package}"]
+      ],
+      "rollbackHint": "不可自动回滚；可从应用市场或原 APK 重装。keep_data=-k 时数据保留，重装后可恢复使用",
+      "blastRadius": "卸载当前用户的三方应用及其数据（对预装应用请改用 package.uninstall_for_user）",
+      "guards": ["IS_SELF", "DEVICE_ADMIN", "IS_LAUNCHER"],
+      "params": [
+        {"name": "keep_data", "kind": "enum", "values": ["-k", ""], "required": false, "default": ""},
+        {"name": "package", "kind": "package"}
+      ]
+    },
+    {
+      "id": "package.uninstall_for_user",
+      "argv": ["pm", "uninstall", "-k", "--user", "{user}", "{package}"],
+      "risk": "CRITICAL",
+      "requiredPrivilege": "SHIZUKU",
+      "reversible": false,
+      "preflight": [
+        ["pm", "list", "packages", "{package}"],
+        ["dumpsys", "package", "{package}"],
+        ["cmd", "package", "dump", "{package}"],
+        ["dumpsys", "device_policy"],
+        ["cmd", "shortcut", "get-default-launcher"]
+      ],
+      "verify": [
+        ["pm", "list", "packages", "--user", "{user}", "{package}"]
+      ],
+      "rollbackHint": "pm install-existing --user <user> <包名> 通常可恢复（行为随 ROM 不同，需真机验证）",
+      "blastRadius": "对指定用户卸载预装/系统应用（保留 APK 与数据）",
+      "guards": ["IS_SELF", "DEVICE_ADMIN", "IS_LAUNCHER"],
+      "requiresRealDeviceVerification": true,
+      "params": [
+        {"name": "user", "kind": "user", "required": false, "default": "0"},
+        {"name": "package", "kind": "package"}
+      ]
+    },
+    {
+      "id": "package.install_existing",
+      "argv": ["pm", "install-existing", "--user", "{user}", "{package}"],
+      "risk": "HIGH",
+      "requiredPrivilege": "SHIZUKU",
+      "reversible": true,
+      "preflight": [
+        ["pm", "list", "packages", "--user", "{user}", "{package}"]
+      ],
+      "verify": [
+        ["pm", "list", "packages", "--user", "{user}", "{package}"]
+      ],
+      "rollbackHint": "pm uninstall -k --user <user> <包名>（package.uninstall_for_user）",
+      "blastRadius": "为指定用户重新启用已卸载但 APK 仍在的包（package.uninstall_for_user 的恢复路径）",
+      "params": [
+        {"name": "user", "kind": "user", "required": false, "default": "0"},
+        {"name": "package", "kind": "package"}
+      ]
+    },
+    {
+      "id": "package.clear",
+      "argv": ["pm", "clear", "{package}"],
+      "risk": "HIGH",
+      "requiredPrivilege": "SHIZUKU",
+      "reversible": false,
+      "preflight": [
+        ["dumpsys", "package", "{package}"]
+      ],
+      "verify": [
+        ["dumpsys", "package", "{package}"]
+      ],
+      "rollbackHint": "不可自动回滚（应用数据已清除）",
+      "blastRadius": "清空应用数据并强制停止进程",
+      "guards": ["IS_SELF"],
+      "params": [
+        {"name": "package", "kind": "package"}
+      ]
+    },
+    {
+      "id": "package.disable_user",
+      "argv": ["pm", "disable-user", "--user", "{user}", "{package}"],
+      "risk": "HIGH",
+      "requiredPrivilege": "SHIZUKU",
+      "reversible": true,
+      "preflight": [
+        ["pm", "list", "packages", "{package}"],
+        ["dumpsys", "device_policy"],
+        ["cmd", "shortcut", "get-default-launcher"]
+      ],
+      "verify": [
+        ["pm", "list", "packages", "-d", "{package}"]
+      ],
+      "rollbackHint": "pm enable <包名>（package.enable）—— 停用优先于卸载，建议作为默认替代方案",
+      "blastRadius": "停用应用（可恢复；比卸载安全，预装应用首选）",
+      "guards": ["IS_SELF", "DEVICE_ADMIN", "IS_LAUNCHER"],
+      "params": [
+        {"name": "user", "kind": "user", "required": false, "default": "0"},
+        {"name": "package", "kind": "package"}
+      ]
+    },
+    {
+      "id": "package.enable",
+      "argv": ["pm", "enable", "{package}"],
+      "risk": "MEDIUM",
+      "requiredPrivilege": "SHIZUKU",
+      "reversible": true,
+      "preflight": [
+        ["pm", "list", "packages", "-d", "{package}"]
+      ],
+      "verify": [
+        ["pm", "list", "packages", "-e", "{package}"]
+      ],
+      "rollbackHint": "pm disable-user --user 0 <包名>（package.disable_user）",
+      "blastRadius": "重新启用已停用的应用",
+      "params": [
+        {"name": "package", "kind": "package"}
+      ]
+    },
+    {
+      "id": "package.force_stop",
+      "argv": ["am", "force-stop", "{package}"],
+      "risk": "MEDIUM",
+      "requiredPrivilege": "SHIZUKU",
+      "reversible": true,
+      "preflight": [
+        ["dumpsys", "package", "{package}"]
+      ],
+      "verify": [
+        ["pidof", "{package}"]
+      ],
+      "rollbackHint": "重新启动该应用即可",
+      "blastRadius": "终止进程（不删数据）",
+      "guards": ["IS_SELF"],
+      "params": [
+        {"name": "package", "kind": "package"}
+      ]
+    },
+    {
+      "id": "package.grant",
+      "argv": ["pm", "grant", "{package}", "{permission}"],
+      "risk": "HIGH",
+      "requiredPrivilege": "SHIZUKU",
+      "reversible": true,
+      "preflight": [
+        ["dumpsys", "package", "{package}"]
+      ],
+      "verify": [
+        ["dumpsys", "package", "{package}"]
+      ],
+      "rollbackHint": "pm revoke <包名> <权限>（package.revoke）",
+      "blastRadius": "授予运行时权限",
+      "guards": ["IS_SELF"],
+      "params": [
+        {"name": "package", "kind": "package"},
+        {"name": "permission", "kind": "package"}
+      ]
+    },
+    {
+      "id": "package.revoke",
+      "argv": ["pm", "revoke", "{package}", "{permission}"],
+      "risk": "HIGH",
+      "requiredPrivilege": "SHIZUKU",
+      "reversible": true,
+      "preflight": [
+        ["dumpsys", "package", "{package}"]
+      ],
+      "verify": [
+        ["dumpsys", "package", "{package}"]
+      ],
+      "rollbackHint": "pm grant <包名> <权限>（package.grant）",
+      "blastRadius": "撤销运行时权限",
+      "guards": ["IS_SELF"],
+      "params": [
+        {"name": "package", "kind": "package"},
+        {"name": "permission", "kind": "package"}
+      ]
+    },
+    {
+      "id": "file.stat",
+      "argv": ["stat", "-c", "%n|%s|%a|%U|%G|%Y", "{path}"],
+      "risk": "READ",
+      "requiredPrivilege": "SHIZUKU",
+      "reversible": true,
+      "preflight": [],
+      "verify": [],
+      "rollbackHint": null,
+      "blastRadius": "只读：单文件元数据",
+      "pathScope": ["/sdcard", "/storage/emulated/0", "/data/local/tmp"],
+      "params": [
+        {"name": "path", "kind": "path"}
+      ]
+    },
+    {
+      "id": "file.list",
+      "argv": ["ls", "-la", "{path}"],
+      "risk": "READ",
+      "requiredPrivilege": "SHIZUKU",
+      "reversible": true,
+      "preflight": [],
+      "verify": [],
+      "rollbackHint": null,
+      "blastRadius": "只读：目录枚举",
+      "pathScope": ["/sdcard", "/storage/emulated/0", "/data/local/tmp"],
+      "params": [
+        {"name": "path", "kind": "path"}
+      ]
+    },
+    {
+      "id": "file.read",
+      "argv": ["cat", "{path}"],
+      "risk": "READ",
+      "requiredPrivilege": "SHIZUKU",
+      "reversible": true,
+      "preflight": [
+        ["stat", "-c", "%s", "{path}"]
+      ],
+      "verify": [],
+      "rollbackHint": null,
+      "blastRadius": "只读：文件内容（有界输出，超预算返回首尾截断）",
+      "pathScope": ["/sdcard", "/storage/emulated/0", "/data/local/tmp"],
+      "params": [
+        {"name": "path", "kind": "path"}
+      ]
+    },
+    {
+      "id": "file.write",
+      "argv": ["tee", "{path}"],
+      "risk": "HIGH",
+      "requiredPrivilege": "SHIZUKU",
+      "reversible": true,
+      "preflight": [
+        ["stat", "-c", "%n|%s|%Y", "{path}"]
+      ],
+      "verify": [
+        ["stat", "-c", "%n|%s|%Y", "{path}"]
+      ],
+      "rollbackHint": "写前自动备份到回收区（/data/local/tmp/.dcp-trash），可用 file.undo 撤销",
+      "blastRadius": "覆写一个文件（自动备份，可撤销）",
+      "pathScope": ["/sdcard", "/storage/emulated/0", "/data/local/tmp"],
+      "stdinPayload": true,
+      "params": [
+        {"name": "path", "kind": "path"},
+        {"name": "content", "kind": "payload"}
+      ]
+    },
+    {
+      "id": "file.delete",
+      "argv": ["mv", "{path}", "/data/local/tmp/.dcp-trash/{auditId}/{basename}"],
+      "purgeArgv": ["rm", "{path}"],
+      "risk": "HIGH",
+      "requiredPrivilege": "SHIZUKU",
+      "reversible": true,
+      "preflight": [
+        ["stat", "-c", "%n|%s|%Y", "{path}"]
+      ],
+      "verify": [
+        ["stat", "-c", "%n", "{path}"],
+        ["ls", "-la", "/data/local/tmp/.dcp-trash/{auditId}/"]
+      ],
+      "rollbackHint": "默认软删（可 file.undo 撤销）；purge=purge 时硬删（不可恢复，需二次确认）",
+      "blastRadius": "把一个文件移入回收区（可撤销）；purge 时永久删除",
+      "pathScope": ["/sdcard", "/storage/emulated/0", "/data/local/tmp"],
+      "internal": ["auditId", "basename"],
+      "params": [
+        {"name": "path", "kind": "path"},
+        {"name": "purge", "kind": "enum", "values": ["", "purge"], "required": false, "default": ""}
+      ]
+    },
+    {
+      "id": "file.undo",
+      "argv": ["mv", "/data/local/tmp/.dcp-trash/{auditId}/{basename}", "{path}"],
+      "risk": "MEDIUM",
+      "requiredPrivilege": "SHIZUKU",
+      "reversible": true,
+      "preflight": [
+        ["ls", "-la", "/data/local/tmp/.dcp-trash/{auditId}/"]
+      ],
+      "verify": [
+        ["stat", "-c", "%n|%s", "{path}"]
+      ],
+      "rollbackHint": "还原后可再次 file.delete",
+      "blastRadius": "从回收区把文件还原到原路径",
+      "internal": ["auditId", "basename", "path"],
+      "params": [
+        {"name": "undo_token", "kind": "text"}
+      ]
+    },
+    {
+      "id": "file.mkdir",
+      "argv": ["mkdir", "-p", "{path}"],
+      "risk": "MEDIUM",
+      "requiredPrivilege": "SHIZUKU",
+      "reversible": true,
+      "preflight": [
+        ["stat", "-c", "%n", "{path}"]
+      ],
+      "verify": [
+        ["stat", "-c", "%n", "{path}"]
+      ],
+      "rollbackHint": "确认目录为空后删除该目录即可",
+      "blastRadius": "创建目录（-p 递归）",
+      "pathScope": ["/sdcard", "/storage/emulated/0", "/data/local/tmp"],
+      "params": [
+        {"name": "path", "kind": "path"}
+      ]
+    },
+    {
+      "id": "file.move",
+      "argv": ["mv", "{path}", "{dest}"],
+      "risk": "MEDIUM",
+      "requiredPrivilege": "SHIZUKU",
+      "reversible": true,
+      "preflight": [
+        ["stat", "-c", "%n|%s", "{path}"]
+      ],
+      "verify": [
+        ["stat", "-c", "%n", "{dest}"]
+      ],
+      "rollbackHint": "mv 回原路径（preflight 已记录原位置）",
+      "blastRadius": "移动/重命名一个文件",
+      "pathScope": ["/sdcard", "/storage/emulated/0", "/data/local/tmp"],
+      "params": [
+        {"name": "path", "kind": "path"},
+        {"name": "dest", "kind": "path"}
+      ]
+    },
+    {
+      "id": "file.hash",
+      "argv": ["md5sum", "{path}"],
+      "risk": "READ",
+      "requiredPrivilege": "SHIZUKU",
+      "reversible": true,
+      "preflight": [
+        ["stat", "-c", "%s", "{path}"]
+      ],
+      "verify": [],
+      "rollbackHint": null,
+      "blastRadius": "只读：文件 MD5 校验和",
+      "pathScope": ["/sdcard", "/storage/emulated/0", "/data/local/tmp"],
+      "params": [
+        {"name": "path", "kind": "path"}
+      ]
+    },
+    {
+      "id": "system.settings_get",
+      "argv": ["settings", "get", "{namespace}", "{key}"],
+      "risk": "READ",
+      "requiredPrivilege": "SHIZUKU",
+      "reversible": true,
+      "preflight": [],
+      "verify": [],
+      "rollbackHint": null,
+      "blastRadius": "只读：读取一个系统设置项",
+      "params": [
+        {"name": "namespace", "kind": "enum", "values": ["system", "secure", "global"]},
+        {"name": "key", "kind": "setting-key"}
+      ]
+    },
+    {
+      "id": "system.settings_put",
+      "argv": ["settings", "put", "{namespace}", "{key}", "{value}"],
+      "risk": "HIGH",
+      "requiredPrivilege": "SHIZUKU",
+      "reversible": true,
+      "preflight": [
+        ["settings", "get", "{namespace}", "{key}"]
+      ],
+      "verify": [
+        ["settings", "get", "{namespace}", "{key}"]
+      ],
+      "rollbackHint": "preflight 已记录旧值；settings put <命名空间> <键> <旧值> 可恢复（system.settings_put）",
+      "blastRadius": "改一个系统设置项（记录旧值，可恢复）",
+      "params": [
+        {"name": "namespace", "kind": "enum", "values": ["system", "secure", "global"]},
+        {"name": "key", "kind": "setting-key"},
+        {"name": "value", "kind": "text"}
+      ]
+    },
+    {
+      "id": "system.settings_delete",
+      "argv": ["settings", "delete", "{namespace}", "{key}"],
+      "risk": "HIGH",
+      "requiredPrivilege": "SHIZUKU",
+      "reversible": false,
+      "preflight": [
+        ["settings", "get", "{namespace}", "{key}"]
+      ],
+      "verify": [
+        ["settings", "get", "{namespace}", "{key}"]
+      ],
+      "rollbackHint": "不可自动回滚；preflight 已记录删除前值，可用 system.settings_put 恢复",
+      "blastRadius": "删除一个系统设置项",
+      "params": [
+        {"name": "namespace", "kind": "enum", "values": ["system", "secure", "global"]},
+        {"name": "key", "kind": "setting-key"}
+      ]
+    },
+    {
+      "id": "system.appops",
+      "argv": ["cmd", "appops", "set", "{package}", "{op}", "{mode}"],
+      "risk": "HIGH",
+      "requiredPrivilege": "SHIZUKU",
+      "reversible": true,
+      "preflight": [
+        ["cmd", "appops", "get", "{package}", "{op}"]
+      ],
+      "verify": [
+        ["cmd", "appops", "get", "{package}", "{op}"]
+      ],
+      "rollbackHint": "cmd appops set <包名> <op> <旧模式>（preflight 已记录；system.appops）",
+      "blastRadius": "改一个 AppOps 模式",
+      "params": [
+        {"name": "package", "kind": "package"},
+        {"name": "op", "kind": "setting-key"},
+        {"name": "mode", "kind": "enum", "values": ["allow", "deny", "default", "ignore", "foreground"]}
+      ]
+    },
+    {
+      "id": "system.appops_get",
+      "argv": ["cmd", "appops", "get", "{package}", "{op}"],
+      "risk": "READ",
+      "requiredPrivilege": "SHIZUKU",
+      "reversible": true,
+      "preflight": [],
+      "verify": [],
+      "rollbackHint": null,
+      "blastRadius": "只读：查一个 AppOps 模式",
+      "params": [
+        {"name": "package", "kind": "package"},
+        {"name": "op", "kind": "setting-key"}
+      ]
+    },
+    {
+      "id": "system.setprop",
+      "argv": ["setprop", "{key}", "{value}"],
+      "risk": "HIGH",
+      "requiredPrivilege": "SHIZUKU",
+      "reversible": true,
+      "preflight": [
+        ["getprop", "{key}"]
+      ],
+      "verify": [
+        ["getprop", "{key}"]
+      ],
+      "rollbackHint": "setprop <键> <旧值>（preflight 已记录；user build 上多数属性只读，失败会如实报错）",
+      "blastRadius": "改一个系统属性（多数 user build 属性只读）",
+      "params": [
+        {"name": "key", "kind": "setting-key"},
+        {"name": "value", "kind": "text"}
+      ]
+    }
+  ]
+}

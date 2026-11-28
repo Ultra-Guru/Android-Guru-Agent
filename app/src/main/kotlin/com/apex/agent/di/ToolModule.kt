@@ -145,15 +145,11 @@ import com.apex.agent.platform.browser.BrowserAgentTools
 import com.apex.agent.platform.browser.BrowserSessionTools
 import com.apex.browser.engine.BrowserEngine
 import com.apex.browser.engine.BrowserTracer
-// #167 加密剪切板金库：仓库/脱敏器/工具集/执行器装饰器
-import com.apex.agent.platform.terminal.io.InputOwner
+// #167 加密剪切板金库：仓库/脱敏器/执行器装饰器（工具集注册体已拆至 ToolModuleVaultRegistration）
 import com.apex.agent.vault.EncryptedPrefsVaultStore
 import com.apex.agent.vault.SecretRedactor
 import com.apex.agent.vault.SecretRedactingExecutor
-import com.apex.agent.vault.VaultAgentTools
 import com.apex.agent.vault.VaultRepository
-import android.content.ClipData
-import android.content.ClipboardManager
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -495,7 +491,12 @@ object ToolModule {
         apexNotifications: com.apex.agent.notify.ApexNotifications,
         // Phase 6 收尾：事件总线（工具事件源）+ DSH 注册器（启动 sweep）
         pluginEventBus: com.apex.agent.core.tools.pluginhost.bridge.PluginEventBus,
-        dshToolRegistrar: com.apex.agent.core.tools.extension.dsh.DshToolRegistrar
+        dshToolRegistrar: com.apex.agent.core.tools.extension.dsh.DshToolRegistrar,
+        // DCP 设备控制面（S01–S07）：统一入口 + 能力自省 + 审计查询三件套。
+        deviceOpsPort: com.apex.agent.core.tools.device.DeviceOpsPort,
+        deviceCapabilityProbe: com.apex.agent.core.tools.device.CapabilityProbe,
+        deviceIntentCatalog: com.apex.agent.core.tools.device.IntentCatalog,
+        deviceAuditQueryHost: com.apex.agent.core.tools.builtin.DeviceAuditQueryTool.Host
     ): ToolRegistry {
         val registry = DefaultToolRegistry()
 
@@ -641,7 +642,10 @@ object ToolModule {
             // T92：argv 能力门（与终端会话/apt 同款版本自适应）
             capabilities = capabilitySource::invoke,
             // v3 S3（G2）：git/gh 命令凭据注入（未连接返回 null = 不注入）
-            gitHubTokenProvider = { githubTokenManager.getToken() }
+            gitHubTokenProvider = { githubTokenManager.getToken() },
+            // S07：Android 专有命令集合由 intents.json 派生（历史底线 ∪ manifest），
+            // 消除手写清单与工具描述漂移；一致性测试锁定差异只增不减。
+            manifestAndroidCommands = { deviceIntentCatalog.androidOnlyExecutables() }
         )
         registry.register(SafeAgentTool(TerminalToolAdapter(TerminalExecTool(
             engine = ExecEngine(prootSpawner),
@@ -781,7 +785,19 @@ object ToolModule {
             shellExec = shellExec,
             privilegeUiProvider = privilegeUiProvider,
             privilegeManager = privilegeManager,
-            context = context
+            context = context,
+            deviceOpsPort = deviceOpsPort
+        )
+
+        // ═══ 5b. DCP 设备控制面（3：DeviceOps / DeviceCapability / DeviceAuditQuery）═══
+        // 注册体拆至 [ToolModuleDeviceControlRegistration.kt]（SRP 预算：同
+        // registerDeviceTools 拆分模式；feature flag 默认关，关闭时行为与旧版一致）。
+        registerDeviceControlTools(
+            registry = registry,
+            port = deviceOpsPort,
+            probe = deviceCapabilityProbe,
+            catalog = deviceIntentCatalog,
+            auditHost = deviceAuditQueryHost
         )
 
         // ═══ 9. 实用工具 (2 v1 + 15 v2) —— 注册体拆至 ToolModuleJvmToolsRegistration.kt
@@ -897,33 +913,15 @@ object ToolModule {
         registry.register(SafeAgentTool(ConnectorSendMessageTool(connectorRegistry, connectorMessenger)))
 
         // ═══ 11c. 加密剪切板金库（#167，4 个工具）═══
-        // 安全契约：Agent 只见标签与备注 —— VaultList 输出脱敏快照；
-        // VaultSave write-only（成功返回仅 label+id，写完自己也读不回）；
-        // VaultPaste 三通道直投（clipboard/terminal/http），返回仅字节数/
-        // 状态码/脱敏响应体，内容永不回显；VaultDelete HIGH 风险门控。
-        // 人类可经抽屉「保险库」页储放 GitHub token / AI API 密钥。
-        VaultAgentTools.all(
-            repository = vaultRepository,
-            clipboardSetter = { text ->
-                // Android 10+ 前台限制：后台写入剪贴板可能抛异常 ——
-                // 由 VaultPasteTool 捕获并转成可自修复的 Error 文本。
-                // #452：CLIPBOARD_SERVICE 极端环境可能为 null —— error() 同样
-                // 被 VaultPasteTool 捕获，与原 as 崩溃路径语义一致。
-                val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                    ?: error("clipboard service unavailable")
-                cm.setPrimaryClip(ClipData.newPlainText("vault", text))
-            },
-            terminalWriter = { sessionId, text ->
-                // kind=RAW：密钥按字节原样进入 PTY（换行已在工具层拼接）。
-                terminalRuntime.write(
-                    sessionId = sessionId,
-                    owner = InputOwner.AGENT,
-                    kind = TerminalRuntime.WriteKind.RAW,
-                    text = text
-                ).fold(onSuccess = { it.written }, onFailure = { false })
-            },
-            httpClient = httpClient
-        ).forEach { registry.register(SafeAgentTool(it)) }
+        // 注册体拆至 [ToolModuleVaultRegistration.kt]（SRP 预算：本文件贴近
+        // 1200 行上限）。安全契约见拆分文件 KDoc（Agent 只见标签不见明文）。
+        registerVaultTools(
+            registry = registry,
+            context = context,
+            httpClient = httpClient,
+            vaultRepository = vaultRepository,
+            terminalRuntime = terminalRuntime
+        )
 
         // ═══ MCP 服务器工具 ═══
         // v3+P83 联合收敛：原实现把 McpCallTool/McpListTool/McpConnectTool 注册了

@@ -103,6 +103,10 @@
     <string name="settings_ext_autosync_label">启动时自动同步扩展</string>
     <string name="settings_ext_autosync_desc">启动时评估已装扩展源；未经确认不安装任何内容</string>
     <string name="settings_ext_marketlinks_hint">各市场源链接在市场页管理（后续版本并入设置）。</string>
+    <string name="settings_page_device_control">设备控制面</string>
+    <string name="settings_summary_device_control">经 Shizuku 的结构化设备操作（实验）</string>
+    <string name="settings_dcp_label">设备控制面（DCP）</string>
+    <string name="settings_dcp_desc">结构化设备操作（卸载/停用应用、/sdcard 文件操作）走 Shizuku 通道，带预演、确认令牌与审计；关闭时保持旧工具行为不变</string>
     <string name="settings_quick_title">常用与最近</string>
     <string name="settings_quick_onboarding">建议配置</string>
     <string name="settings_group_page_count_fmt">%1$d 个页面</string>

@@ -93,6 +93,11 @@ class TerminalExecTool(
         is not installed fall back to the Android host shell (root-su / shizuku /
         local-sh). Prefer this over TerminalExecLegacy for non-interactive commands; use
         TerminalRun+observe for interactive/long jobs.
+        NOTE on device mutations: this tool is a FREE-TEXT escape hatch. For app
+        uninstall/disable/clear, /sdcard file operations or system settings, prefer
+        the DeviceOps tool (structured intents with dry-run, confirm tokens,
+        guards and audit); inside interactive Ubuntu PTY sessions Android
+        binaries do not exist at all — use `apexctl device '<json>'` there.
     """.trimIndent()
 
     override val parametersSchema: String = """

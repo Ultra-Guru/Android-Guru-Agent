@@ -841,15 +841,18 @@ object TerminalModule {
      * 桥根目录落在持久化 home bind 下（host `<filesDir>/linux/home/.apex/bridge`
      * = guest `/root/.apex/bridge`）—— 复用既有 bind，不引入新 bind 面。
      * Android 侧 handler 见 [com.apex.agent.bridge.AndroidBridgeHandlers]。
+     * S09 起第 4 个 handler `device`（DCP 结构化设备操作）注入 [DeviceOpsPort]
+     * —— guest 与 Agent 侧走同一执行面（同一 preflight / gate / 审计）。
      */
     @Provides
     @Singleton
     fun provideGuestBridgeService(
         @ApplicationContext context: Context,
-        userHome: GuestUserHome
+        userHome: GuestUserHome,
+        deviceOpsPort: com.apex.agent.core.tools.device.DeviceOpsPort
     ): GuestBridgeService = GuestBridgeService(
         bridgeRoot = java.io.File(userHome.hostDir(), ".apex/bridge"),
-        handlers = com.apex.agent.bridge.AndroidBridgeHandlers.all(context),
+        handlers = com.apex.agent.bridge.AndroidBridgeHandlers.all(context, deviceOpsPort),
         scope = kotlinx.coroutines.CoroutineScope(
             kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default
         )
