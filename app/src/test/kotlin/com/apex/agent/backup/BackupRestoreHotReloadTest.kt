@@ -172,7 +172,7 @@ class BackupRestoreHotReloadTest {
                 if (clearAll) prefs.map.clear()
                 removals.forEach(prefs.map::remove)
                 puts.forEach { (k, v) -> prefs.map[k] = v }
-                commitCount++
+                prefs.commitCount++
             }
         }
     }
