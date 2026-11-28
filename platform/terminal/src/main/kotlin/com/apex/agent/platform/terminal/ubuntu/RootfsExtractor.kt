@@ -319,7 +319,12 @@ class RootfsExtractor(
                                 progress?.invoke(bytes, declaredArchiveSize)
                             }
                         }
-                        out.fd.sync()
+                        // 真机 P1：不再逐文件 `fd.sync()`。完整 rootfs 有 5–8 万个普通
+                        // 文件，手机 UFS/eMMC 单次 fsync 5–50ms → 仅 fsync 就 4–40 分钟，
+                        // 把「2-5 分钟」的首装放大一个数量级，且与首个任务抢 IO。
+                        // 安全性不变：解压落在 staging 目录，结束后由 provisioner 原子
+                        // rename 激活；中途断电/中断只会丢弃 staging 从头再来（本就
+                        // 无文件级断点续装），页缓存语义足够。
                     }
                     applyPosixMode(outPath, mode, directory = false)
                     regularFiles++

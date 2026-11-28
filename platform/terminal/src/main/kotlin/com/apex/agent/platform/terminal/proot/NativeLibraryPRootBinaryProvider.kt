@@ -65,6 +65,17 @@ class NativeLibraryPRootBinaryProvider(
     /** T91（D5）：探针结果记忆化（二进制路径 → 能力集；provider 为 DI 单例）。 */
     private val capabilityCache = java.util.concurrent.ConcurrentHashMap<String, PRootArgvCapabilities>()
 
+    /**
+     * 真机 P1：版本探针记忆化。`verify()` 被 `TerminalCreate`（每次 2 次）、每条
+     * apt 子命令、`LinuxCapabilityProbe`（每能力 1 次）反复调用，旧实现每次真实
+     * exec `proot --version` —— `probeAll()` 冷缓存要起 45 个 proot 子进程，
+     * ptrace 受限设备每次最长 10s，整段挂在引导末尾与每条命令之前。
+     * 二进制随 APK 分发、进程内不会变化；失败结果同样记忆化（版本仅诊断信息）。
+     */
+    private val versionCache = java.util.concurrent.ConcurrentHashMap<String, VersionProbeOutcome>()
+
+    private class VersionProbeOutcome(val text: String?)
+
     override suspend fun locate(): Result<AbsolutePath> = runCatching {
         val f = hostEnv.prootBinary
         if (!f.exists()) {
@@ -88,11 +99,9 @@ class NativeLibraryPRootBinaryProvider(
             )
         }
 
-        val versionText = try {
-            versionProbe(f)
-        } catch (e: Exception) {
-            null // 探针失败不阻断 —— 版本是诊断信息（见类注释）
-        }
+        val versionText = versionCache.computeIfAbsent(f.absolutePath) {
+            VersionProbeOutcome(runCatching { versionProbe(f) }.getOrNull())
+        }.text // 探针失败不阻断 —— 版本是诊断信息（见类注释）
         PRootBinaryInfo(
             path = binary,
             version = versionText?.let { parseVersion(it) },
