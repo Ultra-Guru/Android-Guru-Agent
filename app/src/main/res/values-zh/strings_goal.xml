@@ -103,6 +103,10 @@
     <string name="settings_ext_autosync_label">启动时自动同步扩展</string>
     <string name="settings_ext_autosync_desc">启动时评估已装扩展源；未经确认不安装任何内容</string>
     <string name="settings_ext_marketlinks_hint">各市场源链接在市场页管理（后续版本并入设置）。</string>
+    <!-- #854 剪贴板桥安全开关（设置 → 代理与安全 → 权限） -->
+    <string name="settings_clipboard_bridge_section">剪贴板桥</string>
+    <string name="settings_clipboard_bridge_label">允许剪贴板桥访问</string>
+    <string name="settings_clipboard_bridge_desc">默认关闭（安全默认）：Agent 工具与 guest 内任意进程（apexctl clipboard）一律收到 CLIPBOARD_ACCESS_DISABLED，而非剪贴板内容。开启后恢复 get/set；密钥类内容建议走金库 VaultSave / VaultPaste。</string>
     <string name="settings_quick_title">常用与最近</string>
     <string name="settings_quick_onboarding">建议配置</string>
     <string name="settings_group_page_count_fmt">%1$d 个页面</string>

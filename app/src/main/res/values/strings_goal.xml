@@ -104,6 +104,10 @@
     <string name="settings_ext_autosync_label">Auto-sync extensions on startup</string>
     <string name="settings_ext_autosync_desc">Evaluate installed extension sources at launch; nothing installs without confirmation</string>
     <string name="settings_ext_marketlinks_hint">Per-market links are managed from the marketplace page (coming to settings later).</string>
+    <!-- #854 clipboard bridge gate (Settings, agent permissions page) -->
+    <string name="settings_clipboard_bridge_section">Clipboard bridge</string>
+    <string name="settings_clipboard_bridge_label">Allow clipboard bridge access</string>
+    <string name="settings_clipboard_bridge_desc">OFF by default (security): agent tools and any guest process (apexctl clipboard) get CLIPBOARD_ACCESS_DISABLED instead of clipboard content. Turn on to restore get/set; for secrets prefer the vault (VaultSave / VaultPaste).</string>
     <string name="settings_quick_title">Quick &amp; Recent</string>
     <string name="settings_quick_onboarding">Suggested</string>
     <string name="settings_group_page_count_fmt">%1$d pages</string>

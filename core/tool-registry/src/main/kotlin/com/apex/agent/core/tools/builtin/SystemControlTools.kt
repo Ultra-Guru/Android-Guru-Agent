@@ -138,13 +138,35 @@ class MediaControlTool(
 }
 
 /**
+ * #854 剪贴板桥门禁常量（单一真源）。
+ *
+ * app 层 apexctl 桥（AndroidBridgeHandlers 剪贴板 handler）与本 legacy
+ * [ClipboardTool] 共用同一开关（AgentSettings.clipboardBridgeEnabled，
+ * 默认关）与同一拒绝契约；常量放 core（app 依赖 core，反向不可见）。
+ */
+object ClipboardBridgeGate {
+    /** 门禁关闭时的稳定错误码（模型可据此分支）。 */
+    const val DISABLED_ERROR = "CLIPBOARD_ACCESS_DISABLED"
+
+    /** 门禁关闭时的一行引导（去哪里开启 / 改用哪条安全通道）。 */
+    const val DISABLED_HINT =
+        "剪贴板桥已默认关闭（安全策略）——请在 设置→代理与安全→权限 开启「剪贴板桥」，或改用金库 VaultSave/VaultPaste"
+}
+
+/**
  * 剪贴板工具
  *
  * Read or write the device clipboard via shell commands. Reading clipboard
  * may require the app to be in foreground on Android 10+.
+ *
+ * #854：剪贴板桥默认关闭（安全默认 —— 密码管理器 OTP/收码不再零门槛直入
+ * 模型上下文，set 静默投毒通道同步关闭）。gate（DI 注入，实时读设置）
+ * 关闭时返回结构化拒绝（稳定错误码 + 引导文案）；gate = null 的既有
+ * 调用方/测试保持原行为（向后兼容）。
  */
 class ClipboardTool(
-    private val shellExecutor: suspend (String) -> String
+    private val shellExecutor: suspend (String) -> String,
+    private val gate: (() -> Boolean)? = null
 ) : AgentTool {
 
     override val id = "Clipboard"
@@ -152,6 +174,11 @@ class ClipboardTool(
     override val description = """
         Read or write the device clipboard.
         Note: Reading clipboard may require the app to be in foreground on Android 10+.
+
+        Honesty note: clipboard access is OFF by default (security). If disabled
+        this tool returns {"ok": false, "error": "CLIPBOARD_ACCESS_DISABLED"} with
+        a hint — guide the user to Settings or use VaultSave/VaultPaste instead of
+        assuming access.
 
         Examples:
         - {"action": "read"}
@@ -173,6 +200,12 @@ class ClipboardTool(
         val json = Json.parseToJsonElement(arguments).jsonObject
         val action = json["action"]?.jsonPrimitive?.content ?: "read"
         val content = json["content"]?.jsonPrimitive?.content
+
+        // #854：门禁拒绝（fail-closed）—— 与 apexctl 桥（app 层
+        // AndroidBridgeHandlers）同一开关同一错误码；结构化拒绝而非静默空数据。
+        if (gate != null && !gate()) {
+            return """{"ok": false, "error": "${ClipboardBridgeGate.DISABLED_ERROR}", "hint": "${ClipboardBridgeGate.DISABLED_HINT}"}"""
+        }
 
         return when (action) {
             "read" -> {

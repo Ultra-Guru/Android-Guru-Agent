@@ -28,17 +28,21 @@ import java.io.File
  *
  * ## 协议
  * 请求：`{"id":"<id>","action":"<name>","args":<json>}`
- * 响应：`{"id":"<id>","ok":true,"data":<string>}` 或 `{"id":"<id>","ok":false,"error":"<msg>"}`
+ * 响应：`{"id":"<id>","ok":true,"data":<string>}` 或
+ * `{"id":"<id>","ok":false,"error":"<msg>","hint":<string>}`
+ * （hint 仅在 #854 门禁拒绝时出现，引导用户去设置开启或改用安全通道）
  *
  * ## Handler（app 层注册，Android 能力宿主）
- * 生产 DI 注册：clipboard（get/set，ClipboardManager）、device-info、battery。
+ * 生产 DI 注册：clipboard（get/set，ClipboardManager，#854 起默认关 ——
+ * [BridgeAccessRefused] 门禁拒绝）、device-info、battery。
  * guest 侧 `apexctl <action> [argsJson]` 与 agent 侧 `TerminalBridge call`
- * 走**同一组 handler**（行为对称可测试）。
+ * 走**同一组 handler**（行为对称可测试；同一道门禁同步覆盖）。
  *
  * ## 诚实降级
  * - 服务未启动 → 脚本轮询 10s 超时 → `BRIDGE_TIMEOUT`（退出码 1）；
  * - 未知 action → `BRIDGE_UNKNOWN_ACTION`；
- * - handler 失败 → `ok:false` + error。
+ * - handler 失败 → `ok:false` + error；
+ * - handler 门禁拒绝（#854，如剪贴板桥默认关） → `ok:false` + error + hint。
  */
 interface GuestBridgeHandler {
     /** 动作名（apexctl 第一个参数）。 */
@@ -54,17 +58,34 @@ interface GuestBridgeHandler {
     suspend fun handle(argsJson: String): String
 }
 
+/**
+ * #854 桥门禁拒绝（fail-closed）：handler 抛出本异常 → [GuestBridgeService.dispatch]
+ * 折叠为 `ok:false` + error（稳定错误码）+ hint（引导文案）的结构化拒绝。
+ *
+ * 用途：剪贴板桥默认关闭 —— 模型 / guest 脚本拿到的不是静默空数据，
+ * 而是可读、可引导（去设置开启 / 改用金库）的诚实拒绝。
+ */
+class BridgeAccessRefused(
+    /** 稳定错误码（模型可据此分支；如 CLIPBOARD_ACCESS_DISABLED）。 */
+    val code: String,
+    /** 一行引导文案（去哪里开启 / 改用哪条安全通道）。 */
+    val hint: String
+) : RuntimeException(code)
+
 /** 一次桥调用的响应。 */
 data class BridgeResponse(
     val id: String,
     val ok: Boolean,
     val data: String? = null,
-    val error: String? = null
+    val error: String? = null,
+    /** #854 门禁拒绝时的一行引导（仅 error 路径出现；data 路径恒 null）。 */
+    val hint: String? = null
 ) {
     fun toJson(): String {
         val d = data?.let { ",\"data\":" + jsonString(it) } ?: ""
         val e = error?.let { ",\"error\":" + jsonString(it) } ?: ""
-        return """{"id":${jsonString(id)},"ok":$ok$d$e}"""
+        val h = hint?.let { ",\"hint\":" + jsonString(it) } ?: ""
+        return """{"id":${jsonString(id)},"ok":$ok$d$e$h}"""
     }
 
     private fun jsonString(s: String): String {
@@ -174,6 +195,10 @@ class GuestBridgeService(
             ?: return BridgeResponse(id = "unknown", ok = false, error = "BRIDGE_UNKNOWN_ACTION")
         return try {
             BridgeResponse(id = "unknown", ok = true, data = handler.handle(argsJson))
+        } catch (e: BridgeAccessRefused) {
+            // #854：门禁拒绝是结构化契约（稳定错误码 + 引导文案），
+            // 不是普通失败 —— 单列分支，绝不落成裸异常 message。
+            BridgeResponse(id = "unknown", ok = false, error = e.code, hint = e.hint)
         } catch (e: Exception) {
             BridgeResponse(id = "unknown", ok = false, error = e.message ?: e.javaClass.simpleName)
         }

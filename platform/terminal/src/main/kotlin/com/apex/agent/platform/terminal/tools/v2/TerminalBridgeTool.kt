@@ -21,7 +21,8 @@ import kotlinx.serialization.json.jsonPrimitive
  *   （args 为 JSON 文本 —— handler 自行解析）
  * JSON Schema (output):
  *   status → { ok, running, scriptInstalled, actions: [{name,description}] }
- *   call   → { ok, data? , error? }
+ *   call   → { ok, data? , error?, hint? }
+ *   （hint 仅在门禁拒绝时出现，#854 —— 如剪贴板桥默认关时引导开启或改用金库）
  */
 class TerminalBridgeTool(
     private val bridge: GuestBridgeService
@@ -65,6 +66,7 @@ class TerminalBridgeTool(
                     put("ok", JsonPrimitive(resp.ok))
                     resp.data?.let { put("data", JsonPrimitive(it)) }
                     resp.error?.let { put("error", JsonPrimitive(it)) }
+                    resp.hint?.let { put("hint", JsonPrimitive(it)) }
                 }.toString()
             }
             else -> throw IllegalArgumentException("unknown action '$action'")

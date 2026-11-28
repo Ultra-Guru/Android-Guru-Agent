@@ -46,7 +46,9 @@ internal fun registerDeviceTools(
     shellExec: suspend (String) -> String,
     privilegeUiProvider: PrivilegeUiProvider,
     privilegeManager: PrivilegeManager,
-    context: Context
+    context: Context,
+    // #854：剪贴板桥门禁（实时读设置 —— 与 apexctl 桥同一开关，切设置即生效）。
+    clipboardBridgeEnabled: () -> Boolean
 ) {
     // ═══ 5. 应用管理 (6) ═══
     registry.register(SafeAgentTool(AppListTool(shellExec)))
@@ -60,7 +62,9 @@ internal fun registerDeviceTools(
     registry.register(SafeAgentTool(DeviceInfoTool(shellExec)))
     registry.register(SafeAgentTool(SettingsTool(shellExec)))
     registry.register(SafeAgentTool(MediaControlTool(shellExec)))
-    registry.register(SafeAgentTool(ClipboardTool(shellExec)))
+    // #854：剪贴板工具接门禁（默认关 → 结构化拒绝 CLIPBOARD_ACCESS_DISABLED；
+    // 与 apexctl 桥 / TerminalBridge call clipboard 同一道门）。
+    registry.register(SafeAgentTool(ClipboardTool(shellExec, gate = clipboardBridgeEnabled)))
     registry.register(SafeAgentTool(GetTimeTool()))
     registry.register(SafeAgentTool(LogcatTool(shellExec)))
 
