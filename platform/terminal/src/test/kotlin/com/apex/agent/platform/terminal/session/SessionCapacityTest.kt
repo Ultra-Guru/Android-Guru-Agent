@@ -33,7 +33,7 @@ import org.junit.Test
  */
 class SessionCapacityTest {
 
-    private fun sessionCount(rt: TerminalRuntimeImpl): Int =
+    private suspend fun sessionCount(rt: TerminalRuntimeImpl): Int =
         rt.snapshot(TerminalRuntime.SnapshotMode.SESSIONS).getOrThrow().sessions.size
 
     @Test
