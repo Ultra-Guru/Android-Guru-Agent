@@ -737,6 +737,16 @@ data class AgentSettings(
     // 零迁移。任务进行中（H-6）任何模式都冻结到收束后的第一个 idle 点。
     val skinApplyMode: String = "auto",
 
+    /**
+     * 屏幕安全防护（#857）：FLAG_SECURE 默认开 —— 窗口内容不进最近任务
+     * 缩略图、系统截屏与录屏（终端输出 / 金库密钥页 / 聊天记录等敏感面
+     * 均受保护）。代价是用户自己也无法截屏/录屏本应用（需截取终端或聊天
+     * 内容时在设置 → 权限页「屏幕安全」临时关闭，关闭即时生效无需重启）。
+     * 接线：MainActivity.onCreate 按当前值置位 window flag，并 collect 本
+     * 流做运行期热切换。旧 JSON 缺省 true（升级即默认受保护）。
+     */
+    val secureScreen: Boolean = true,
+
     // ═══ v2.1.0 浏览器角色门禁（评审 B2）═══
     // browserRoleRestrictionEnabled：默认开 = 严格——普通会话不授予
     // browser-automation，browser_* 工具不可见不可调（计划层+RoleGate 三处强制）；

@@ -517,16 +517,19 @@ class CameraCapturer(private val context: Context) {
         )
     }
 
-    /** 判断文件是否落在 FileProvider 覆盖的根下（files/cache/external 同款配置）。 */
+    /**
+     * savePath 是否可直接作为相机 EXTRA_OUTPUT 目标（模型可控路径判定）。
+     *
+     * #858：FileProvider 根已收窄（res/xml/file_paths.xml 不再覆盖全部
+     * files/cache/external 根），直写判定不再枚举旧根目录 —— 与 Markdown
+     * 媒体卡共用同一套 [MediaOpenPolicy] 白名单（savePath 与媒体卡 URL 同为
+     * 模型可控字符串，信任边界一致）：公共存储媒体/下载目录内直写（对应
+     * external-path 根已覆盖），白名单外（应用私有目录等）一律先拍
+     * cacheDir/camera 临时件再拷贝到 savePath（既有兜底路径，行为等价）。
+     */
     private fun isUnderProviderRoot(file: java.io.File): Boolean {
-        val roots = listOfNotNull(
-            context.filesDir,
-            context.cacheDir,
-            context.getExternalFilesDir(null),
-            context.externalCacheDir
-        )
-        val path = file.canonicalPath
-        return roots.any { path.startsWith(it.canonicalPath + java.io.File.separator) }
+        // canonicalPath 消解符号链接与 ".."，防白名单字符串前缀被路径形式绕过
+        return com.apex.agent.ui.component.MediaOpenPolicy.isAllowed(file.canonicalPath)
     }
 
     /** cache 临时副本回收（#869）：删除失败只留痕——cacheDir 本身有系统兜底。 */

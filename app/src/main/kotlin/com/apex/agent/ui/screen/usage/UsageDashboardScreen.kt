@@ -159,10 +159,10 @@ class UsageDashboardViewModel @Inject constructor(
     /**
      * 导出全量记录为 CSV 并发起系统分享。
      *
-     * 写入 `cacheDir/usage-export/usage-<ts>.csv`（FileProvider cache-path 已覆盖
-     * 全部 cache 子目录，见 res/xml/file_paths.xml），随后 ACTION_SEND 分享；
-     * 模式与 LogViewerScreen.exportAndShare 一致：applicationContext 解包跨协程、
-     * 分享意图加 NEW_TASK（从非 Activity 上下文启动）。
+     * 写入 `cacheDir/usage-export/usage-<ts>.csv`（#858 收窄后的 FileProvider
+     * cache-path 覆盖目录之一，见 res/xml/file_paths.xml），随后 ACTION_SEND
+     * 分享；模式与 LogViewerScreen.exportAndShare 一致：applicationContext
+     * 解包跨协程、分享意图加 NEW_TASK（从非 Activity 上下文启动）。
      */
     fun exportCsvAndShare(context: Context) {
         val appContext = context.applicationContext
