@@ -15,7 +15,7 @@ import org.junit.Test
 class ToolAuditLoggerCompatTest {
 
     @Test
-    fun `旧格式行（v1.5 时代 9 字段）完整可读`() {
+    fun `旧格式行（v1_5 时代 9 字段）完整可读`() {
         val legacy =
             """{"ts":1730000000000,"tool":"ShellExecute","decision":"executed","tier":"shizuku","command":"ls","durationMs":12,"success":true,"exitCode":0}"""
         val entry = ToolAuditLogger.parseLineInternal(legacy)

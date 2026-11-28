@@ -92,7 +92,7 @@ class DeviceBridgeHandlerTest {
     }
 
     @Test
-    fun `非法 JSON 沿用 ok:false + error 语义`() = runTest {
+    fun `非法 JSON 结构化拒绝且 ok 为 false`() = runTest {
         val port = FakePort()
         val resp = service(port).dispatch("device", "not json")
         assertEquals(false, resp.ok)
