@@ -191,6 +191,24 @@ class ApexApp : Application(), Configuration.Provider, ImageLoaderFactory {
         runCatching { guestBridgeService.start() }
             .onFailure { Log.w("ApexAgent", "guest bridge start failed: ${it.message}") }
 
+        // #861：SettingsRepository 密钥区后台预热 —— init 已改为廉价加载
+        // （四个 JSON 键 + 守卫迁移，不触碰 securePrefs），MasterKey Keystore
+        // 密码学 + EncryptedSharedPreferences 首建移到 IO 协程；发消息/
+        // 设置页密钥展示的首次访问（ensureHydrated 幂等兜底）在预热完成前
+        // 也能自愈。冷启动主线程零 Keystore 开销。
+        appScope.launch(Dispatchers.IO) {
+            runCatching { settingsRepository.ensureHydrated() }
+                .onFailure { Log.w("ApexAgent", "settings key hydration failed: ${it.message}") }
+        }
+
+        // #838：明文放行探针接线 —— Provider 保存校验与系统 NSC 口径对齐
+        // （局域网 http:// 端点保存时即报错，不再运行期才以连接失败暴露）。
+        runCatching {
+            com.apex.agent.core.llm.runtime.ProviderConfigValidator.cleartextPermitted =
+                { host -> android.security.NetworkSecurityPolicy.getInstance()
+                    .isCleartextTrafficPermitted(host) }
+        }.onFailure { Log.w("ApexAgent", "cleartext probe wiring failed: ${it.message}") }
+
         // #236 收尾：Keep Alive 服务同步升级为**流驱动** —— 旧接线只有设置页
         // SwitchRow 一处一次性 apply（备份恢复/导入/其他任何写入路径翻转
         // keepAlive 时前台服务照跑）。agentSettings 流的 keepAlive 变化统一
