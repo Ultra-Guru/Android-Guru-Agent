@@ -157,8 +157,8 @@ object SettingsPages {
             id = "agent.permissions", groupId = "agent",
             titleRes = R.string.settings_nav_workspace_permissions, summaryRes = R.string.settings_summary_permissions,
             icon = Icons.Outlined.Rule,
-            keywords = listOf("权限", "工具", "permission", "bypass", "安全"),
-            sectionIds = listOf("mode", "rules"),
+            keywords = listOf("权限", "工具", "permission", "bypass", "安全", "剪贴板", "clipboard"),
+            sectionIds = listOf("mode", "rules", "clipboardBridge"),
             scope = Scope.GLOBAL, effective = Effective.RESTART
         ),
         SettingsPage(

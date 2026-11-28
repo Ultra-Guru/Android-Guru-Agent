@@ -781,7 +781,12 @@ object ToolModule {
             shellExec = shellExec,
             privilegeUiProvider = privilegeUiProvider,
             privilegeManager = privilegeManager,
-            context = context
+            context = context,
+            // #854：剪贴板桥门禁（默认关）—— 与 apexctl 桥同一开关，
+            // 实时读设置（非构造期快照），切设置即生效。
+            clipboardBridgeEnabled = {
+                settingsRepository.agentSettings.value.clipboardBridgeEnabled
+            }
         )
 
         // ═══ 9. 实用工具 (2 v1 + 15 v2) —— 注册体拆至 ToolModuleJvmToolsRegistration.kt

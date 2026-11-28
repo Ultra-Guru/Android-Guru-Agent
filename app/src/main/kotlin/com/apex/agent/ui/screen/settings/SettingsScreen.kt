@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Extension
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.outlined.Science
@@ -426,6 +427,22 @@ private fun SettingsPageRouter(
                 onModeChange = { m -> onAgent { copy(permissionMode = m) } },
                 onRulesChange = { rs -> onAgent { copy(permissionRules = rs) } }
             )
+            // #854 剪贴板桥安全开关（默认关）：LLM 工具（TerminalBridge call
+            // clipboard / legacy Clipboard）与 guest 内任意进程（apexctl
+            // clipboard）共用同一道门 —— 关闭时一律 CLIPBOARD_ACCESS_DISABLED
+            // 结构化拒绝；桥侧实时读设置，切开关即生效（无需重启）。
+            SectionCard(
+                title = stringResource(R.string.settings_clipboard_bridge_section),
+                icon = Icons.Outlined.ContentCopy,
+                initiallyExpanded = true
+            ) {
+                SwitchRow(
+                    label = stringResource(R.string.settings_clipboard_bridge_label),
+                    checked = agent.clipboardBridgeEnabled,
+                    description = stringResource(R.string.settings_clipboard_bridge_desc),
+                    onCheckedChange = { on -> onAgent { copy(clipboardBridgeEnabled = on) } }
+                )
+            }
         }
         "agent.policy" -> TerminalCommandPolicyPage()
         "agent.rules" -> SettingsLeafColumn {

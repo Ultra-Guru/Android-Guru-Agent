@@ -841,15 +841,24 @@ object TerminalModule {
      * 桥根目录落在持久化 home bind 下（host `<filesDir>/linux/home/.apex/bridge`
      * = guest `/root/.apex/bridge`）—— 复用既有 bind，不引入新 bind 面。
      * Android 侧 handler 见 [com.apex.agent.bridge.AndroidBridgeHandlers]。
+     *
+     * #854：剪贴板桥默认关闭 —— 门禁实时读设置（SettingsRepository 流，非
+     * 构造期快照），LLM 工具与 guest 内任意进程共用同一道门（切开关即生效）。
      */
     @Provides
     @Singleton
     fun provideGuestBridgeService(
         @ApplicationContext context: Context,
-        userHome: GuestUserHome
+        userHome: GuestUserHome,
+        settingsRepository: com.apex.agent.ui.screen.settings.SettingsRepository
     ): GuestBridgeService = GuestBridgeService(
         bridgeRoot = java.io.File(userHome.hostDir(), ".apex/bridge"),
-        handlers = com.apex.agent.bridge.AndroidBridgeHandlers.all(context),
+        handlers = com.apex.agent.bridge.AndroidBridgeHandlers.all(
+            context = context,
+            clipboardBridgeEnabled = {
+                settingsRepository.agentSettings.value.clipboardBridgeEnabled
+            }
+        ),
         scope = kotlinx.coroutines.CoroutineScope(
             kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default
         )

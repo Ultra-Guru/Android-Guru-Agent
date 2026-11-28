@@ -746,6 +746,16 @@ data class AgentSettings(
     val browserRoleRestrictionEnabled: Boolean = true,
     val browserSensitiveAllowed: Boolean = false,
 
+    // ═══ #854 剪贴板桥门禁（安全默认：默认关）═══
+    // clipboardBridgeEnabled：默认 false = 拒绝 —— LLM 工具（TerminalBridge
+    // call clipboard / legacy Clipboard）与 PRoot guest 内任意进程（apexctl
+    // clipboard，含 npm/pip 钩子）共用同一道门：get/set 一律结构化拒绝
+    // （CLIPBOARD_ACCESS_DISABLED + 引导文案），密码管理器 OTP/收码不再零门槛
+    // 直入模型上下文，set 静默投毒通道同步关闭。开启后 get/set 恢复（get 返回
+    // 逐字剪贴板内容）；设置页开关（设置→代理与安全→权限），桥侧实时读取
+    // （切开关即生效，无需重启）。
+    val clipboardBridgeEnabled: Boolean = false,
+
     // ═══ 模型限速友好（只针对某些用户：有 RPM/TPM/日次数配额的厂商）═══
     // 默认全关 = 历史行为零变化。开启后的三根支柱：
     //  - rateLimitFriendly：总开关（设置 → 模型配置 → 限速友好）；
