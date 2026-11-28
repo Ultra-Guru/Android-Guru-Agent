@@ -100,6 +100,22 @@ object ProviderConfigValidator {
 
     data class Result(val ok: Boolean, val errors: List<String>)
 
+    /**
+     * #838：http:// baseUrl 的系统明文放行探针。
+     *
+     * 背景口径脱节：应用侧 [LlmConfig.isLocalHost] 把全部 RFC1918 私网段
+     * （10.x / 192.168.x / 172.16-31.x / *.local）视为本地端点豁免 API Key，
+     * 但系统明文白名单（network_security_config）只放行 localhost /
+     * 127.0.0.1 / 10.0.2.2 / 10.0.3.2 —— 局域网 http:// 端点**应用校验放行、
+     * 运行期 OkHttp 才抛 Cleartext not permitted**（保存时不报错、用的时候
+     * 才失败，对用户呈现为「配置好好的就是连不上」）。
+     *
+     * 本探针把系统口径前移到**配置保存时**：null = 跳过（纯 JVM 单测 / 未
+     * 接线）；app 启动时注入 `NetworkSecurityPolicy.isCleartextTrafficPermitted`
+     * （见 ApexApp —— 本模块纯 JVM，不可依赖 android.security API）。
+     */
+    var cleartextPermitted: ((host: String) -> Boolean)? = null
+
     fun validate(provider: ProviderConfig): Result {
         val errors = mutableListOf<String>()
         if (provider.id.isBlank()) errors += "Provider id 不能为空"
@@ -108,6 +124,18 @@ object ProviderConfigValidator {
             errors += "Provider baseUrl 不能为空"
         } else if (!provider.baseUrl.startsWith("http://") && !provider.baseUrl.startsWith("https://")) {
             errors += "Provider baseUrl 必须是 http(s):// scheme（当前=${provider.baseUrl}）"
+        } else if (provider.baseUrl.startsWith("http://")) {
+            // #838：明文端点的系统放行检查（探针未接线时跳过 —— 见 KDoc）。
+            val host = provider.baseUrl
+                .removePrefix("http://")
+                .substringBefore(':')
+                .substringBefore('/')
+                .trim()
+            val permitted = cleartextPermitted
+            if (host.isNotBlank() && permitted != null && !permitted(host)) {
+                errors += "http:// 端点 $host 不在系统明文放行名单（仅 localhost/127.0.0.1/10.0.2.2/10.0.3.2）" +
+                    "—— 运行期将被拒绝连接。请改用 https://，或确认地址确属放行域"
+            }
         }
         // 内置 Provider（openai/deepseek/...）允许无 key（用户后填）；非内置则要求至少一个 key。
         // #217：本地推理端点（Ollama / LM Studio / vLLM / 内网自建服务）免鉴权——

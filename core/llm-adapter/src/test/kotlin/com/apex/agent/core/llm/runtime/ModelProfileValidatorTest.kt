@@ -163,4 +163,63 @@ class ModelProfileValidatorTest {
         assertFalse(r.ok)
         assertTrue(r.errors.any { it.contains("不存在") })
     }
+
+    // ── #838：明文放行探针（NSC 口径前移到保存时）──
+
+    @Test
+    fun `cleartext probe absent keeps legacy behavior`() {
+        val saved = ProviderConfigValidator.cleartextPermitted
+        try {
+            ProviderConfigValidator.cleartextPermitted = null
+            // 局域网明文端点（RFC1918 判本地豁免 key）：探针未接线时跳过系统检查。
+            val r = ProviderConfigValidator.validate(
+                ProviderConfig(id = "lan", displayName = "LAN", baseUrl = "http://192.168.1.20:11434", isBuiltIn = false)
+            )
+            assertTrue(r.errors.toString(), r.ok)
+        } finally {
+            ProviderConfigValidator.cleartextPermitted = saved
+        }
+    }
+
+    @Test
+    fun `cleartext probe rejects lan http host the os will block`() {
+        val saved = ProviderConfigValidator.cleartextPermitted
+        try {
+            // NSC 真实口径：只放行 localhost/127.0.0.1/10.0.2.2/10.0.3.2。
+            ProviderConfigValidator.cleartextPermitted = { host ->
+                host in setOf("localhost", "127.0.0.1", "10.0.2.2", "10.0.3.2")
+            }
+            val r = ProviderConfigValidator.validate(
+                ProviderConfig(id = "lan", displayName = "LAN", baseUrl = "http://192.168.1.20:11434", isBuiltIn = false)
+            )
+            assertFalse(r.ok)
+            assertTrue(
+                r.errors.toString(),
+                r.errors.any { it.contains("192.168.1.20") && it.contains("明文放行") }
+            )
+        } finally {
+            ProviderConfigValidator.cleartextPermitted = saved
+        }
+    }
+
+    @Test
+    fun `cleartext probe permits loopback host and ignores https`() {
+        val saved = ProviderConfigValidator.cleartextPermitted
+        try {
+            ProviderConfigValidator.cleartextPermitted = { host ->
+                host in setOf("localhost", "127.0.0.1", "10.0.2.2", "10.0.3.2")
+            }
+            val loopback = ProviderConfigValidator.validate(
+                ProviderConfig(id = "local", displayName = "Local", baseUrl = "http://127.0.0.1:11434", isBuiltIn = false)
+            )
+            assertTrue(loopback.errors.toString(), loopback.ok)
+            // https 端点不受明文策略影响。
+            val https = ProviderConfigValidator.validate(
+                ProviderConfig(id = "cloud", displayName = "Cloud", baseUrl = "https://api.example.com/v1", isBuiltIn = false, apiKeys = listOf("sk"))
+            )
+            assertTrue(https.errors.toString(), https.ok)
+        } finally {
+            ProviderConfigValidator.cleartextPermitted = saved
+        }
+    }
 }

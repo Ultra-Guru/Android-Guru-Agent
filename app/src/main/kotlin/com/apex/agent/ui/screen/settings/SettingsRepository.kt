@@ -121,6 +121,13 @@ class SettingsRepository @Inject constructor(
         // B0-BUG-01/06 写盘纪律：只在「首次种子（键不存在）」或「迁移发生」
         // 时落盘，解析失败的损坏域一律禁写（旧实现无条件四连写 —— 解析失败
         // → 回退默认值 → 写回 = 一次文件损坏把用户配置永久重置）。
+        //
+        // #861：本 init 只做**廉价**加载（四个 JSON 键读取 + 守卫迁移），
+        // 绝不触碰 securePrefs —— 旧实现两处 migrateAndHydrateApiKeys 会在
+        // Application.onCreate 主线程强制初始化 EncryptedSharedPreferences
+        // （MasterKey Keystore 密码学 + 首次落盘），冷启动被钉死 + StrictMode
+        // 磁盘违例。密钥迁移/回填改经 [ensureHydrated]：ApexApp 启动后台预热
+        // + defaultLlmConfig / getProviderApiKey 首次访问兜底（幂等）。
         val freshProviders = !prefs.contains(KEY_PROVIDERS)
         val freshProfiles = !prefs.contains(KEY_PROFILES)
         val freshRoles = !prefs.contains(KEY_ROLES)
@@ -128,9 +135,7 @@ class SettingsRepository @Inject constructor(
 
         var provs = readProviders() ?: ModelProfileDefaults.builtInProviders
         var profs = (readProfiles(provs) ?: ModelProfileDefaults.defaultProfiles(provs)).toMutableList()
-        provs = migrateAndHydrateApiKeys(provs)
         val legacyMigrated = migrateLegacyConfig(profs, provs) { newProvs -> provs = newProvs }
-        provs = migrateAndHydrateApiKeys(provs)
         _providers.value = provs
         _profiles.value = profs
         _roles.value = readRoles(profs) ?: ModelProfileDefaults.defaultRoles(profs)
@@ -144,6 +149,36 @@ class SettingsRepository @Inject constructor(
         if (freshProfiles || legacyMigrated) persistProfiles()
         if (freshRoles || legacyMigrated) persistRoles()
         if (freshAgent || legacyMigrated) persistAgentSettings()
+    }
+
+    // ── #861：密钥迁移/回填的懒触发（幂等）──────────────────────
+
+    /** 幂等标记：ensureHydrated 已完成（读写都在 [hydrationLock] 内）。 */
+    @Volatile
+    private var hydrated = false
+
+    private val hydrationLock = Any()
+
+    /**
+     * #861：密钥迁移 + 回填的懒触发点（旧行为 = init 主线程强制执行）。
+     *
+     * 触发面（三层，首层命中后其余为纯 no-op）：
+     *  1. ApexApp 启动即后台预热（appScope + Dispatchers.IO）—— 常规路径
+     *     下 MainActivity 首帧前已完成，主线程冷启动零 Keystore 开销；
+     *  2. [defaultLlmConfig] 首次调用（LlmModule 构建客户端的入口）——
+     *     预热未完而用户已发消息的极端窗口下兜底；
+     *  3. [getProviderApiKey] 首次调用（设置页密钥状态展示）。
+     *
+     * 语义保持：与旧 init 内联版完全同源（[migrateAndHydrateApiKeys]），
+     * 幂等且线程安全（双重检查 + [hydrationLock]）。
+     */
+    fun ensureHydrated() {
+        if (hydrated) return
+        synchronized(hydrationLock) {
+            if (hydrated) return
+            _providers.value = migrateAndHydrateApiKeys(_providers.value)
+            hydrated = true
+        }
     }
 
     // ── 查询辅助 ───────────────────────────────────────────────
@@ -163,6 +198,7 @@ class SettingsRepository @Inject constructor(
     /** 读取某个 Provider 的 API Key（密文；无则返回空串而非 null，便于直接判空）。 */
     fun getProviderApiKey(providerId: String): String {
         if (providerId.isBlank()) return ""
+        ensureHydrated()
         // B0-BUG-02:明文旧键回退已随迁移清扫移除 —— Key 只在加密区
         // (Keystore 降级设备上 securePrefs 为 fallback SP,仍由此单点读取)。
         return securePrefs.getString(KEY_PROVIDER_KEY + providerId, null).orEmpty()
@@ -213,6 +249,8 @@ class SettingsRepository @Inject constructor(
 
     /** 由「默认模型 Profile + 其 Provider」派生运行时 [LlmConfig]，供引擎 / 测试连接使用。 */
     fun defaultLlmConfig(): LlmConfig {
+        // #861：密钥回填懒触发兜底（预热未完的极端窗口下，发消息前必须完成）。
+        ensureHydrated()
         val profile = defaultProfile()
         val provider = getProvider(profile.providerId)
         return LlmConfig.fromProfile(profile, provider)
