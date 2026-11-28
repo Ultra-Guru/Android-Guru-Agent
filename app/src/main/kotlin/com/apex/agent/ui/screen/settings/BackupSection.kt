@@ -30,6 +30,8 @@ import com.apex.agent.backup.BackupManager
 import com.apex.agent.backup.ExportOptions
 import com.apex.agent.backup.ImportPreview
 import com.apex.agent.backup.ImportResult
+import com.apex.agent.core.logging.AppLogger
+import com.apex.agent.core.logging.LogCategory
 import com.apex.agent.ui.glass.GlassButton
 import com.apex.agent.ui.glass.GlassCard
 import com.apex.agent.ui.glass.GlassIconButton
@@ -65,6 +67,8 @@ import javax.inject.Inject
 class BackupViewModel @Inject constructor(
     private val backupManager: BackupManager,
     private val languageManager: LanguageManager,
+    // #853：导入回灌 —— BackupManager 直写 SP 后立即 reload 内存态。
+    private val settingsRepository: SettingsRepository,
 ) : ViewModel() {
 
     data class BackupUiState(
@@ -148,6 +152,18 @@ class BackupViewModel @Inject constructor(
             val pass = passphrase.takeIf { it.isNotEmpty() }?.toCharArray()
             try {
                 val result = backupManager.import(jsonText, restoreSettings, restoreVault, pass)
+                // #853：设置导入直写 SP —— 必须立即回灌内存态。否则本进程内
+                // 任意一次设置编辑（upsertProvider/updateRoles/…）都会把恢复前
+                // 的陈旧快照整体写回，静默回滚刚导入的配置（含权限模式）。
+                if (result.settingsImported) {
+                    runCatching { settingsRepository.reload() }
+                        .onFailure {
+                            AppLogger.instance.warn(
+                                LogCategory.SYSTEM, "BackupViewModel",
+                                "settings reload after import failed (restart still applies): ${it.message}"
+                            )
+                        }
+                }
                 _uiState.update {
                     it.copy(
                         importing = false,

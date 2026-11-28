@@ -400,6 +400,11 @@ class BackupManager @Inject constructor(
         var vaultImported = false
 
         if (restoreSettings) {
+            // #853：两段式 —— 先全部校验/脱敏，再一次原子提交（旧实现逐键
+            // apply()，中途失败留下「半套导入」的混合状态且无法回滚）。
+            // JSON 有效性校验把「坏值落盘 → SettingsRepository 读侧损坏域
+            // 留痕」提前到导入时即可行动报错。
+            val staged = linkedMapOf<String, String>()
             for (key in SETTINGS_KEYS) {
                 val value = bundle.settingsJson[key]?.takeIf { it.isNotBlank() } ?: continue
                 val safe = if (key == KEY_PROVIDERS) {
@@ -412,9 +417,24 @@ class BackupManager @Inject constructor(
                 } else {
                     value
                 }
-                runCatching { prefs.edit().putString(key, safe).apply() }
-                    .onSuccess { settingsImported = true }
-                    .onFailure { errors += "$ERR_SETTINGS_WRITE_FAILED:$key" }
+                if (runCatching { json.parseToJsonElement(safe) }.isFailure) {
+                    errors += "$ERR_SETTINGS_WRITE_FAILED:$key"
+                    continue
+                }
+                staged[key] = safe
+            }
+            if (staged.isNotEmpty()) {
+                val editor = prefs.edit()
+                staged.forEach { (k, v) -> editor.putString(k, v) }
+                // commit（同步、SP 层单事务，返回值=是否落盘成功）而非逐键
+                // apply —— 调用方已在 IO 线程（BackupViewModel confirmImport），
+                // 半套导入被消除。
+                val committed = runCatching { editor.commit() }.getOrDefault(false)
+                if (committed) {
+                    settingsImported = true
+                } else {
+                    errors += "$ERR_SETTINGS_WRITE_FAILED:${staged.keys.first()}"
+                }
             }
         }
 
