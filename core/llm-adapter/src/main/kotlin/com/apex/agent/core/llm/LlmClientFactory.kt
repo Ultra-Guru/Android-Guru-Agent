@@ -23,8 +23,15 @@ import java.util.concurrent.TimeUnit
  */
 object LlmClientFactory {
 
+    /**
+     * #835：连接池 / 调度器单源 —— 旧实现每次建 LlmClient（含每次切换
+     * Profile）各造一套池；newBuilder 派生**共享** base 的连接池与调度器，
+     * 逐客户端只覆写超时等自身配置（OkHttp newBuilder 语义）。
+     */
+    private val baseClient: OkHttpClient by lazy { OkHttpClient() }
+
     fun create(config: LlmConfig): LlmClient {
-        val httpClient = OkHttpClient.Builder()
+        val httpClient = baseClient.newBuilder()
             .connectTimeout(config.connectTimeoutMs, TimeUnit.MILLISECONDS)
             .readTimeout(config.readTimeoutMs, TimeUnit.MILLISECONDS)
             .writeTimeout(config.writeTimeoutMs, TimeUnit.MILLISECONDS)

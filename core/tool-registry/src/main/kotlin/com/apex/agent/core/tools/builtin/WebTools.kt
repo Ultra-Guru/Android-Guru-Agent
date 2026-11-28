@@ -249,7 +249,8 @@ class WebFetchTool(
     }
 
     companion object {
-        fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
+        // #835：经 ToolsHttpPool 派生 —— 共享连接池/调度器，超时与重定向语义原值不变。
+        fun defaultClient(): OkHttpClient = com.apex.agent.core.tools.ToolsHttpPool.base.newBuilder()
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .followRedirects(true)

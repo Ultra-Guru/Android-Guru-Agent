@@ -183,8 +183,9 @@ class GithubTokenManager @Inject constructor(
 
     // v2：共享单例 client（旧实现每次 validateToken 都 new 一个带独立连接池的
     // OkHttpClient，且非 2xx 分支不关 response —— 连接泄漏）
+    // #835：经 AppHttpPool 派生 —— 共享连接池/调度器，超时语义原值不变。
     private val httpClient: OkHttpClient by lazy {
-        OkHttpClient.Builder()
+        com.apex.agent.net.AppHttpPool.base.newBuilder()
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .build()

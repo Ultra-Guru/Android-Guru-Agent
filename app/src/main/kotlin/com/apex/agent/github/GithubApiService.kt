@@ -22,7 +22,8 @@ import com.apex.agent.core.logging.LogCategory
 class GithubApiService @Inject constructor(
     private val tokenManager: GithubTokenManager
 ) {
-    private val client = OkHttpClient.Builder()
+    // #835：经 AppHttpPool 派生 —— 共享连接池/调度器，超时语义原值不变。
+    private val client = com.apex.agent.net.AppHttpPool.base.newBuilder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         // 新增 writeTimeout，避免 PUT 大 base64 文件时无限挂起（原配置缺失）。
