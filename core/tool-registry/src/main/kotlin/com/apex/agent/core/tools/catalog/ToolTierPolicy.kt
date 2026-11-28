@@ -48,7 +48,11 @@ object ToolTierPolicy {
      *    terminal / memory / apps / device / MCP / skills / connectors /
      *    browser automation);
      * 2. Each is individually useful without prior setup;
-     * 3. Total schema payload stays ~20 KB — safe for every provider.
+     * 3. 请求预算中的**优先级条目**：ToolRequestBudget 两级预算下 CORE 无条件
+     *    进入请求、不受扩展预算截断（曾因 CORE 75 > MAX_TOOLS 64 被静默丢弃
+     *    Write/WebSearch/ToolSearch 等 11 个）；代价是总量随集合增长（当前
+     *    ~60KB schema），新增 CORE 前权衡体积——低频能力留 CATALOG 走
+     *    ToolSearch 渐进披露。
      */
     val CORE_TOOL_IDS: Set<String> = setOf(
         // ── interaction ──

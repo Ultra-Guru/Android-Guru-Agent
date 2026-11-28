@@ -93,7 +93,8 @@ internal fun registerDeviceTools(
             }
         }
     )))
-    registry.register(SafeAgentTool(InputTextTool(shellExec)))
+    // 真机 P0：接入无障碍通路（ACTION_SET_TEXT 支持中文；无障碍不可用自动回落 shell）。
+    registry.register(SafeAgentTool(InputTextTool(shellExec, privilegeUiProvider)))
 
     // ═══ 8. 传感器 (2) ═══
     registry.register(SafeAgentTool(GetLocationTool(shellExec)))

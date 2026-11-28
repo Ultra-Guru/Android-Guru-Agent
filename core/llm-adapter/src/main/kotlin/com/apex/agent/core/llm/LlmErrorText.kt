@@ -63,8 +63,13 @@ object LlmErrorText {
     /** Profile / Provider 配置非法。 */
     const val CONFIG_INVALID = "模型配置不完整，请在设置中检查模型配置"
 
-    /** 角色所需能力无候选模型满足。 */
-    const val CAPABILITY_MISMATCH = "当前模型不具备该任务所需的能力，请在设置中为对应角色更换模型"
+    /**
+     * 角色所需能力无候选模型满足。真机 P0：补充可操作指引 —— 旧文案只说「更换
+     * 模型」，用户不知道发图失败要在「设置 → 模型」里给档案打开 Vision/ImgIn。
+     */
+    const val CAPABILITY_MISMATCH =
+        "当前模型不具备该任务所需的能力（如图片输入需 Vision），请在「设置 → 模型」" +
+            "为该模型档案打开对应能力开关，或为对应角色更换模型"
 
     /** fallback 链全部尝试完毕。 */
     const val FALLBACK_EXHAUSTED = "所有候选模型均调用失败，请稍后重试或在设置中检查模型配置"

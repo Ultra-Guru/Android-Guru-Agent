@@ -55,14 +55,18 @@ class CommandPermissionGateGitPatternsTest {
     fun `常规 git 命令不误伤`() = runTest {
         val gateway = DenyGateway()
         val gate = CommandPermissionGate(gateway)
-        // 注意:存量 "dd " 模式与 "git a[dd ]" 子串相撞——终端里的
-        // `git add` 本就会确认(本 PR 之前的既有行为,不在此收窄);
-        // 故不用含 add 的命令做直通断言
+        // 真机 P0 修复：旧 "dd " 子串模式与 "git a[dd ]" 相撞（`git add` 一直弹
+        // 「危险命令」）；词边界匹配后 git 工作流主干全部直通。
         listOf(
             "git status",
+            "git add .",
+            "git add -A",
             "git commit -m fix",
+            "git commit -m \"Refactor platform module\"",
             "git push origin feat/x",
             "git log --oneline",
+            "git log --format=%H",
+            "npm run format",
         ).forEach { cmd ->
             assertTrue("常规 git 命令应直通: $cmd", gate.ensureAllowed(cmd))
         }

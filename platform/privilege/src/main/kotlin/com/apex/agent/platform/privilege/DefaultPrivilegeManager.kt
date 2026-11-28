@@ -227,30 +227,23 @@ class DefaultPrivilegeManager @Inject constructor(
         service: ApexAccessibilityService,
         action: UiAction
     ): UiResult {
+        // 真机 P0 修复（「开无障碍反而更坏」倒挂）：
+        // ① Swipe / PressKey 此前落 `else -> Unsupported action` 且 UiTools 不回落
+        //    shell → 开了无障碍的设备滑动/滚动/长按 100% 失败；
+        // ② dispatchGesture / performGlobalAction 的 Boolean 返回值被丢弃 → 手势
+        //    被系统拒绝（服务解绑中 / flag 缺失）仍回报 OK，模型确信点了而屏幕没动；
+        // ③ 手势后无静置 → 紧随的 UiDump 抓到过渡动画中的旧页面/空页面。
         return when (action) {
-            is UiAction.Back -> {
-                service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
-                UiResult(true)
-            }
-            is UiAction.Home -> {
-                service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
-                UiResult(true)
-            }
-            is UiAction.Recents -> {
-                service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_RECENTS)
-                UiResult(true)
-            }
-            is UiAction.OpenNotifications -> {
-                service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_NOTIFICATIONS)
-                UiResult(true)
-            }
+            is UiAction.Back -> globalAction(service, AccessibilityService.GLOBAL_ACTION_BACK)
+            is UiAction.Home -> globalAction(service, AccessibilityService.GLOBAL_ACTION_HOME)
+            is UiAction.Recents -> globalAction(service, AccessibilityService.GLOBAL_ACTION_RECENTS)
+            is UiAction.OpenNotifications ->
+                globalAction(service, AccessibilityService.GLOBAL_ACTION_NOTIFICATIONS)
             // #240 收尾：收起通知栏 —— 无障碍无专用 GLOBAL_ACTION，BACK 的
             // 系统语义就是收合 shade（状态栏展开时 BACK = collapse）。手势派发
             // 在已展开时是同一效果；未展开时 BACK 退一层（与用户手动按返回一致）。
-            is UiAction.CloseNotifications -> {
-                service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
-                UiResult(true)
-            }
+            is UiAction.CloseNotifications ->
+                globalAction(service, AccessibilityService.GLOBAL_ACTION_BACK)
             is UiAction.Click -> {
                 // 使用手势API点击坐标
                 val path = android.graphics.Path().apply {
@@ -261,9 +254,22 @@ class DefaultPrivilegeManager @Inject constructor(
                         path, 0, 100
                     ))
                     .build()
-                service.dispatchGesture(gesture, null, null)
-                UiResult(true)
+                settleAfterGesture(service.dispatchGesture(gesture, null, null))
             }
+            is UiAction.Swipe -> {
+                val path = android.graphics.Path().apply {
+                    moveTo(action.x1.toFloat(), action.y1.toFloat())
+                    lineTo(action.x2.toFloat(), action.y2.toFloat())
+                }
+                val duration = action.durationMs.coerceIn(50L, 60_000L)
+                val gesture = android.accessibilityservice.GestureDescription.Builder()
+                    .addStroke(android.accessibilityservice.GestureDescription.StrokeDescription(
+                        path, 0, duration
+                    ))
+                    .build()
+                settleAfterGesture(service.dispatchGesture(gesture, null, null))
+            }
+            is UiAction.PressKey -> pressKeyVia(service, action.keyCode)
             is UiAction.InputText -> {
                 // 双通道输入：rootInActiveWindow.findFocus(FOCUS_INPUT) 定位
                 // 当前输入焦点节点，ACTION_SET_TEXT 整段替换（复用
@@ -294,8 +300,43 @@ class DefaultPrivilegeManager @Inject constructor(
                     executeViaShizukuInput(action)
                 }
             }
-            else -> UiResult(false, "Unsupported action")
+            else -> UiResult(false, "Unsupported action: ${action::class.simpleName}")
         }
+    }
+
+    /** 全局动作：系统拒绝（服务解绑中 / 无障碍被系统关闭）时诚实回报失败。 */
+    private fun globalAction(service: ApexAccessibilityService, actionId: Int): UiResult {
+        val ok = service.performGlobalAction(actionId)
+        return if (ok) UiResult(true)
+        else UiResult(false, "accessibility global action rejected (action=$actionId)")
+    }
+
+    /** 手势派发结果校验 + 静置：成功后等 [UI_SETTLE_MS] 让过渡动画落地再返回。 */
+    private suspend fun settleAfterGesture(dispatched: Boolean): UiResult {
+        if (!dispatched) {
+            return UiResult(false, "accessibility gesture rejected by system (service not ready?)")
+        }
+        kotlinx.coroutines.delay(UI_SETTLE_MS)
+        return UiResult(true)
+    }
+
+    /**
+     * 按键：BACK/HOME/RECENTS 走无障碍全局动作；其余键码无障碍无原生注入 API，
+     * 回落 Root / Shizuku 的 `input keyevent`（两者都没有则诚实报不可用，
+     * 不再落 Unsupported action 让调用方误以为动作不存在）。
+     */
+    private suspend fun pressKeyVia(service: ApexAccessibilityService, keyCode: Int): UiResult {
+        val globalId = when (keyCode) {
+            android.view.KeyEvent.KEYCODE_BACK -> AccessibilityService.GLOBAL_ACTION_BACK
+            android.view.KeyEvent.KEYCODE_HOME -> AccessibilityService.GLOBAL_ACTION_HOME
+            android.view.KeyEvent.KEYCODE_APP_SWITCH -> AccessibilityService.GLOBAL_ACTION_RECENTS
+            else -> return when {
+                _rootAvailable.value -> executeViaRootInput(UiAction.PressKey(keyCode))
+                _shizukuAvailable.value -> executeViaShizukuInput(UiAction.PressKey(keyCode))
+                else -> UiResult(false, "keyevent $keyCode requires Root or Shizuku (a11y has no key injection)")
+            }
+        }
+        return globalAction(service, globalId)
     }
 
     /**
@@ -481,6 +522,11 @@ class DefaultPrivilegeManager @Inject constructor(
      */
     override suspend fun refreshStatus() {
         withContext(Dispatchers.IO) {
+            // 真机 P1：刷新即失效 Detector 的档位缓存 —— 首次 Magisk 授权常被 3s 探测
+            // 超时吃掉并缓存 30s，而 root 授权变化此前没有任何失效钩子（只有 Shizuku
+            // 事件会失效），用户「明明给了 root，agent 还说没权限」。权限页/回到前台
+            // 触发的 refreshStatus 是最自然的重探点。
+            PrivilegeDetector.invalidateCache()
             checkRoot()
             _shizukuAvailable.value = checkShizuku()
             _accessibilityAvailable.value = ApexAccessibilityService.instance != null
@@ -502,6 +548,8 @@ class DefaultPrivilegeManager @Inject constructor(
     }
 
     private companion object {
+        /** 手势派发成功后的静置时长：过渡动画/窗口切换落地，紧随的 UiDump 不抓旧页面。 */
+        private const val UI_SETTLE_MS = 300L
         /** UI 树遍历深度上限（与旧 traverseNode 的 depth > 20 截断语义一致）。 */
         private const val MAX_UI_TREE_DEPTH = 20
     }

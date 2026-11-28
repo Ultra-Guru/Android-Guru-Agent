@@ -96,8 +96,8 @@ internal object EngineToolPlanner {
                 ToolRequestBudget.planForced(registry, forced)
             // #147 子代理：仅收窄工具集，不附带 tool_choice=required —— 子代理的
             // 最终轮需要能输出纯文本结论（forced 语义会迫使每轮调用工具）。
-            // 子代理**默认不继承** browser 角色（v2.1.0 文档口径）：cfg 未显式
-            // 带 grantedRoles 即为空集 = 受限角色全不可见。
+            // 子代理默认不继承动态角色源（cfg.inheritDynamicRoleGrants=false，
+            // v2.1.0 文档口径）：仅认 cfg 显式携带的 grantedRoles 快照。
             allowed.isNotEmpty() && degradationLevel == 0 ->
                 ToolRequestBudget.planForced(registry, allowed)
             // 默认计划（BUILD / PLAN / GOAL 同待遇：编码工位全量工具面 +
@@ -109,7 +109,7 @@ internal object EngineToolPlanner {
                 coreOnly = degradationLevel >= DEGRADATION_CORE_ONLY,
                 serviceToolIds = if (degradationLevel == 0) serviceToolIds else emptySet()
             ).applyScopeIsolation(registry, config)
-        }.applyRoleIsolation(registry, config.grantedRoles)
+        }.applyRoleIsolation(registry, EngineRoleGrants.resolve(config))
     }
 
     /**

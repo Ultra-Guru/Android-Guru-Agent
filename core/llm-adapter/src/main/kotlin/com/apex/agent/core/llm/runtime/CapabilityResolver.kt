@@ -46,6 +46,15 @@ object CapabilityResolver {
         profile: ModelCapabilities
     ): ModelCapabilities {
         if (provider == null) return profile
+        // 真机 P0 修复（发任何图片立即「当前模型不具备该任务所需的能力」）：
+        // 能力模型里 imageInput 是 vision 的必要子集，但 17 个内置 Provider 只声明
+        // `vision = true`、从未声明 `imageInput`（默认 false）→ 逐位 AND 后恒 false，
+        // VISION 角色路由（要求 text+vision+imageInput）永远无候选。
+        // 语义修正：vision 蕴含 imageInput（两级同理）——想关图片输入就关 vision；
+        // 显式 imageInput=true 仍被尊重（Provider/Profile 任一方 vision 关闭时仍可
+        // 单独保留图片输入，例如纯 image→text 的专用端点）。
+        val providerAcceptsImages = provider.imageInput || provider.vision
+        val profileAcceptsImages = profile.imageInput || profile.vision
         return ModelCapabilities(
             text = provider.text && profile.text,
             vision = provider.vision && profile.vision,
@@ -54,7 +63,7 @@ object CapabilityResolver {
             streaming = provider.streaming && profile.streaming,
             reasoning = provider.reasoning && profile.reasoning,
             jsonMode = provider.jsonMode && profile.jsonMode,
-            imageInput = provider.imageInput && profile.imageInput,
+            imageInput = providerAcceptsImages && profileAcceptsImages,
             longContext = provider.longContext && profile.longContext,
         )
     }

@@ -117,8 +117,10 @@ class AndroidConnectedServicesProvider @Inject constructor(
         )
 
         /**
-         * MCP 一等工具并入请求的数量上限 —— 给 CORE 集（~45 个）保留
-         * MAX_TOOLS 预算的余量，超大 MCP 服务器按服务器注册顺序截断。
+         * MCP 一等工具并入请求的数量上限 —— CORE 集在 ToolRequestBudget 两级
+         * 预算下无条件进入请求（不再挤占扩展额度），此上限只约束「已连接服务」
+         * 这一扩展层自身的规模（与会话激活共享 MAX_EXTENSION_TOOLS / 48KB 预算），
+         * 超大 MCP 服务器按服务器注册顺序截断。
          */
         private const val MAX_MCP_TOOLS = 12
     }

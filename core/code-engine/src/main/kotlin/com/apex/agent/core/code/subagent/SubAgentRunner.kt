@@ -405,6 +405,9 @@ class SubAgentRunner(
             is SubAgentKind.Builtin -> kind.type.toolIds
             is SubAgentKind.Custom -> kind.def.toolIds.toSet()
         },
+        // 子代理默认不继承主会话的动态 browser 角色授予（v2.1.0 文档口径）：
+        // 计划层仅认本 cfg 显式携带的 grantedRoles（此处为空 = 受限角色全不可见）。
+        inheritDynamicRoleGrants = false,
         additionalSystemContext = buildString {
             append(promptFor(kind))
             append("\n\n")

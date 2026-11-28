@@ -58,14 +58,78 @@ class PrivilegeUiProvider @Inject constructor(
         }
     }
 
+    /**
+     * 无障碍文本输入（真机 P0 修复）：经 [PrivilegeManager.executeUiAction] 的
+     * InputText 分支 —— ACTION_SET_TEXT 写入焦点节点；节点不可写时该分支自行
+     * 回落 Root/Shizuku `input text`，失败原因原样透出（不再静默）。
+     */
+    override suspend fun inputText(text: String): String? {
+        if (!isAvailable) return null
+        val result = privilegeManager.executeUiAction(UiAction.InputText(text))
+        return if (result.success) {
+            "OK: typed ${text.length} chars into focused field"
+        } else {
+            "Error: ${result.message}"
+        }
+    }
+
+    /**
+     * 结构化 UI 树 → 文本。真机 P0 修复：旧实现遍历的是 `nodes`（DFS **扁平**
+     * 先序视图，children 已剥离）却只取前 20 个节点、`dumpNode` 永不递归 →
+     * 开无障碍时模型只能看到 20 个容器/装饰布局，页面里可点击元素几乎全被
+     * 截掉，而输出非空又永不回落 uiautomator —— agent 近乎失明。
+     *
+     * 现遍历 `roots`（真实嵌套树）：剪掉「自身无语义且无有语义后代」的纯装饰
+     * 节点，按 [maxDepth] 递归输出，总量受 [MAX_DUMP_NODES] / [MAX_DUMP_CHARS]
+     * 约束并在尾部诚实标注截断。
+     */
     override suspend fun dumpUiTree(maxDepth: Int): String {
         val result = privilegeManager.getUiTree()
-        if (!result.success || result.nodes.isEmpty()) return ""
+        if (!result.success) return ""
+        val roots = result.roots.ifEmpty { result.nodes.filter { it.children.isNotEmpty() } }
+            .ifEmpty { result.nodes }
+        if (roots.isEmpty()) return ""
+
+        fun isSemantic(node: com.apex.agent.platform.privilege.UiNode): Boolean =
+            node.clickable || node.scrollable || node.text.isNotBlank() ||
+                node.contentDescription.isNotBlank() ||
+                node.className.contains("EditText") || node.className.contains("CheckBox") ||
+                node.className.contains("Switch")
+
+        // 后序剪枝：返回保留子树（无语义叶子剔除），保持层级缩进可读。
+        fun prune(
+            node: com.apex.agent.platform.privilege.UiNode,
+            depth: Int
+        ): com.apex.agent.platform.privilege.UiNode? {
+            if (depth > maxDepth) return null
+            val kids = node.children.mapNotNull { prune(it, depth + 1) }
+            if (kids.isEmpty() && !isSemantic(node)) return null
+            return if (kids.size == node.children.size) node else node.copy(children = kids)
+        }
 
         val sb = StringBuilder(4096)
-        sb.appendLine("=== UI Tree (${result.nodes.size} root nodes) ===")
-        for (root in result.nodes.take(20)) {
-            dumpNode(sb, root, depth = 0, maxDepth = maxDepth)
+        sb.appendLine("=== UI Tree (${result.nodes.size} nodes; [C]lickable [S]crollable [T]ext) ===")
+        var shown = 0
+        var truncated = false
+        fun walk(node: com.apex.agent.platform.privilege.UiNode, depth: Int) {
+            if (truncated) return
+            if (shown >= MAX_DUMP_NODES || sb.length >= MAX_DUMP_CHARS) {
+                truncated = true
+                return
+            }
+            dumpNode(sb, node, depth)
+            shown++
+            for (child in node.children) walk(child, depth + 1)
+        }
+        for (root in roots) {
+            prune(root, 0)?.let { walk(it, 0) }
+        }
+        if (shown == 0) return ""
+        if (truncated) {
+            sb.appendLine(
+                "... [truncated: $shown of ${result.nodes.size} nodes shown — " +
+                    "narrow with filter_text or a deeper max_depth on a specific screen]"
+            )
         }
         return sb.toString()
     }
@@ -73,11 +137,8 @@ class PrivilegeUiProvider @Inject constructor(
     private fun dumpNode(
         sb: StringBuilder,
         node: com.apex.agent.platform.privilege.UiNode,
-        depth: Int,
-        maxDepth: Int
+        depth: Int
     ) {
-        if (depth > maxDepth) return
-
         val indent = "  ".repeat(depth)
         val roleIcon = buildString {
             if (node.clickable) append("[C]")
@@ -86,12 +147,12 @@ class PrivilegeUiProvider @Inject constructor(
             if (isEmpty()) append("   ")
         }
         val text = when {
-            node.text.isNotBlank() -> "\"${node.text.take(60)}\""
-            node.contentDescription.isNotBlank() -> "\"${node.contentDescription.take(60)}\""
+            node.text.isNotBlank() -> "\"${node.text.take(80)}\""
+            node.contentDescription.isNotBlank() -> "\"${node.contentDescription.take(80)}\""
             else -> ""
         }
-        val resId = node.resourceId.ifBlank { "" }
-        sb.appendLine("$indent$roleIcon ${node.className} $resId $text [${node.bounds}]")
+        val resId = node.resourceId.substringAfterLast('/').ifBlank { "" }
+        sb.appendLine("$indent$roleIcon ${node.className.substringAfterLast('.')} $resId $text ${node.bounds}")
     }
 
     private fun getScreenMetrics(): Pair<Int, Int> {
@@ -124,6 +185,14 @@ class PrivilegeUiProvider @Inject constructor(
         is GestureAction.Home -> "pressed home"
         is GestureAction.OpenNotifications -> "opened notification shade"
         is GestureAction.CloseNotifications -> "closed notification shade"
+    }
+
+    private companion object {
+        /** 递归输出的节点上限（典型页面 100-500 节点，剪枝后通常 < 150）。 */
+        private const val MAX_DUMP_NODES = 200
+
+        /** 字符上限：留出 UiDumpTool 外层 8000 字符截断的余量，保证尾部截断标注可见。 */
+        private const val MAX_DUMP_CHARS = 7_600
     }
 }
 

@@ -290,26 +290,46 @@ class ToolOutputTruncator(
     }
 
     /**
-     * 列表截断：保留前N项和后N项
+     * 列表截断：按**字符预算**整行填充首尾（而非固定行数）。
+     *
+     * 真机 P1 修复：旧实现固定 15+10 行（~1KB），与预算完全脱钩 —— 默认 8000
+     * 字符预算下 7999 字符原样通过、8001 字符只剩 ~1800 字符的「悬崖」；
+     * `Read/CodeRead`（>20 行即命中本分支，专用头部截断不可达）、UiDump、
+     * ToolList、Grep/RepoMap 结果全被砍成 25 行，模型拿着残缺上下文判断失误
+     * → 分页重读 → 40 轮迭代被分页吃光。现首尾各按 head/tail 字符预算填充
+     * 整行，预算真正被用满，告示仍写明省略行数与总数。
      */
     private fun truncateList(text: String, budget: Budget): TruncationResult {
         val lines = text.lines()
         if (lines.size <= 30) return TruncationResult(text, truncated = false)
 
-        // 行数收敛进预算（预算放大时保留更多行；默认维持旧的 15+10）
-        val keepTop = if (budget.max > maxChars) {
-            (KEEP_TOP_LINES * budget.max / maxChars.coerceAtLeast(1)).coerceIn(KEEP_TOP_LINES, 200)
-        } else KEEP_TOP_LINES
-        val keepBottom = if (budget.max > maxChars) {
-            (KEEP_BOTTOM_LINES * budget.max / maxChars.coerceAtLeast(1)).coerceIn(KEEP_BOTTOM_LINES, 150)
-        } else KEEP_BOTTOM_LINES
+        val top = mutableListOf<String>()
+        var topChars = 0
+        for (line in lines) {
+            if (topChars + line.length + 1 > budget.head) break
+            top += line
+            topChars += line.length + 1
+        }
+        val bottom = mutableListOf<String>()
+        var bottomChars = 0
+        for (line in lines.asReversed()) {
+            if (bottomChars + line.length + 1 > budget.tail) break
+            bottom += line
+            bottomChars += line.length + 1
+        }
+        bottom.reverse()
+
+        // 行极短时首尾可能覆盖全部行 —— 整段本就在预算内，直通不截。
+        if (top.size + bottom.size >= lines.size) {
+            return TruncationResult(text, truncated = false)
+        }
 
         val truncated = buildString {
-            appendLine(lines.take(keepTop).joinToString("\n"))
+            appendLine(top.joinToString("\n"))
             appendLine()
-            appendLine("[... ${lines.size - keepTop - keepBottom} items omitted, ${lines.size} total ...]")
+            appendLine("[... ${lines.size - top.size - bottom.size} items omitted, ${lines.size} total ...]")
             appendLine()
-            appendLine(lines.takeLast(keepBottom).joinToString("\n"))
+            appendLine(bottom.joinToString("\n"))
         }
 
         return TruncationResult(withNotice(truncated), truncated = true)
@@ -355,12 +375,6 @@ class ToolOutputTruncator(
 
         /** 字段级产物的膨胀容忍（键名开销；超限回退整串策略）。 */
         private const val MAX_EXPANSION_FACTOR = 2
-
-        /** 列表截断默认保留头部行数（预算放大时按比例增长）。 */
-        private const val KEEP_TOP_LINES = 15
-
-        /** 列表截断默认保留尾部行数。 */
-        private const val KEEP_BOTTOM_LINES = 10
 
         /** 覆盖预算时的默认 head 占比（构造参数异常时的兜底）。 */
         private const val DEFAULT_HEAD_RATIO = 2f / 3f

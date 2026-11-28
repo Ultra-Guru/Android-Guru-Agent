@@ -55,6 +55,8 @@ import com.apex.agent.core.engine.AgentConfig
 import com.apex.agent.core.engine.AgentEngine
 import com.apex.agent.core.engine.AgentMode
 import com.apex.agent.core.engine.ApexAgentEngine
+import com.apex.agent.core.engine.EngineRoleGrants
+import com.apex.agent.tools.BrowserRoleAuth
 import com.apex.agent.core.code.thinking.CodeAdaptiveThinkingSelector
 import com.apex.agent.core.code.thinking.CodeThinkingLevel
 import com.apex.agent.core.engine.compression.ContextCompressor
@@ -346,6 +348,11 @@ object CodeModule {
             .firstOrNull { it.isDefault }
             ?.effectiveContextWindow(agentSettings.maxContextTokens)
             ?: agentSettings.maxContextTokens
+        // 真机 P0 修复（browser_* 从未到达模型）：计划层角色过滤与调用层 RoleGate /
+        // 目录层 ToolSearch 同源 —— AgentConfig.grantedRoles 此前从未被 DI 填充（恒空集），
+        // EngineToolPlanner 据此把 41 个 browser_* 整行剔除，关限制 / 激活专家模板均无效。
+        // 每轮计划现取 BrowserRoleAuth（设置开关 + 模板授予，热生效）；子代理不继承。
+        EngineRoleGrants.install { BrowserRoleAuth.currentGrants() }
         val codeConfig = AgentConfig(
             mode = AgentMode.BUILD,
             thinkingLevel = CodeThinkingLevel.STANDARD.toAgentLevel(),

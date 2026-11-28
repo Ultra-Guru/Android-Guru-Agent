@@ -504,7 +504,20 @@ internal fun ModelSetupCard(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 OutlinedTextField(
                     value = sel.modelId,
-                    onValueChange = { viewModel.upsertProfile(sel.copy(modelId = it.trim())) },
+                    onValueChange = { id ->
+                        // 真机 P0：手输模型 id 与 /models 选择同款能力启发式预填 ——
+                        // 此前手输从不预填 vision/imageInput，发图即「模型不具备该能力」
+                        // 且无引导指向能力 Chip（只加不减，用户手改过的位不会被覆盖）。
+                        val trimmed = id.trim()
+                        viewModel.upsertProfile(
+                            sel.copy(
+                                modelId = trimmed,
+                                capabilities = ModelCapabilityHeuristics.enrichCapabilities(
+                                    trimmed, sel.capabilities
+                                )
+                            )
+                        )
+                    },
                     label = { Text(stringResource(R.string.model_id_label)) },
                     supportingText = {
                         Text(

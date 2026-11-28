@@ -87,6 +87,14 @@ class FailureClassifier {
         if (RATE_LIMIT_GUARD_PATTERNS.any { message.contains(it) }) return FailureClass.FATAL
 
         if (PERMISSION_PATTERNS.any { message.contains(it) }) return FailureClass.PERMISSION
+
+        // 真机 P1 修复：确定性失败先于瞬时词表 —— 旧实现纯子串分类，`Read` 报
+        // 「文件不存在：…/network_config.kt」/ grep 结果含 "503" / 构建日志含
+        // "busy" 都被判 TRANSIENT，同一调用按阶梯盲重试 7 次（含写类工具二次
+        // 副作用，累计 5 分钟纯等待）。确定性错误（参数非法 / 文件不存在 /
+        // 未知工具 / JSON 畸形 / 命令不存在）重放必然同样失败 → FATAL 不重试。
+        if (DETERMINISTIC_PATTERNS.any { message.contains(it) }) return FailureClass.FATAL
+
         if (TRANSIENT_PATTERNS.any { message.contains(it) }) return FailureClass.TRANSIENT
 
         if (exception is java.io.IOException) return FailureClass.TRANSIENT
@@ -95,6 +103,21 @@ class FailureClassifier {
     }
 
     companion object {
+        /**
+         * 确定性失败签名（小写）：重放同一调用必然再次失败，任何瞬时词
+         * （network / timeout / busy / 503 …）出现在其文案里都不该触发重试。
+         * 刻意**不含**裸 "not found"：DNS 的 "host not found" 仍是瞬时故障。
+         */
+        internal val DETERMINISTIC_PATTERNS = listOf(
+            "invalid argument", "invalid parameter", "illegal argument", "illegalargumentexception",
+            "no such file", "file not found", "does not exist",
+            "unknown tool", "tool not found", "unknown option", "unknown command",
+            "command not found", "unsupported action", "not supported",
+            "invalid json", "malformed", "parse error", "jsondecodingexception",
+            "schema validation", "validation failed", "missing required",
+            "bad request", "exit=127", "exit code 127"
+        )
+
         /**
          * Substrings (already lowercased) that indicate a retryable,
          * transient failure. Tuned for the Android/Agent context:
