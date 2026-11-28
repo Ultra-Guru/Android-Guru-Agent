@@ -57,6 +57,37 @@ class CodeToolsTest {
         assertTrue(out, out.contains("Afile"))
     }
 
+    @Test
+    fun `read stops at cumulative 50KB cap with offset resume hint`() = runTest {
+        // #830：600 行 × ~100 字符 ≈ 60KB 内容 —— 超过文档承诺的 50KB 累计上限。
+        // 旧实现无字节记账，单次最多可吐 ~4MB（2000 行 × 2000 字符）。
+        val root = tmp.newFolder("ws")
+        File(root, "big.txt").writeText((1..600).joinToString("") { "$it:${"x".repeat(100)}\n" })
+        val tool = CodeReadTool(roots(root))
+
+        val out = tool.executeSafe("""{"path": "big.txt", "limit": 2000}""").render()
+        assertTrue(out, out.contains("[已截断：累计输出达 50KB 上限 —— 用 offset="))
+        // 总输出以 50KB + 头尾固定开销为上界（承诺兑现，不再 80 倍超发）。
+        val outBytes = out.toByteArray(Charsets.UTF_8).size
+        assertTrue("output ${outBytes}B must be capped", outBytes <= 50 * 1024 + 300)
+        assertTrue("output ${outBytes}B should be substantial", outBytes > 40 * 1024)
+        // 未渲染到文件末尾，且续读 offset 指向截断处的下一行（可前进，非死循环）。
+        assertFalse(out, out.contains("600:"))
+        val resumeAt = Regex("offset=(\\d+)").find(out)?.groupValues?.get(1)?.toInt() ?: 0
+        assertTrue("resume offset $resumeAt should point past the truncation", resumeAt in 2..599)
+    }
+
+    @Test
+    fun `read under-cap file returns full content without cap marker`() = runTest {
+        val root = tmp.newFolder("ws")
+        File(root, "small.txt").writeText("a\nb\nc\n")
+        val tool = CodeReadTool(roots(root))
+
+        val out = tool.executeSafe("""{"path": "small.txt"}""").render()
+        assertTrue(out, out.contains("1: a") && out.contains("3: c"))
+        assertFalse(out, out.contains("已截断"))
+    }
+
     // ── CodeEdit ────────────────────────────────────────────────────
 
     @Test

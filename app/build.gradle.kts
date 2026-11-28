@@ -227,7 +227,6 @@ dependencies {
     implementation(project(":core:tool-registry"))
     implementation(project(":core:logging"))
     implementation(project(":platform:privilege"))
-    implementation(project(":platform:persistence"))
     implementation(project(":platform:terminal"))
     // P83: Terminal UI 直接消费 TerminalRenderSnapshot/RenderCell（styled grid 渲染）。
     // platform:terminal 对 :terminal-emulator 是 implementation（不传递），app 需显式声明。

@@ -152,7 +152,6 @@ include(":core:code-native")
 
 // Android平台层
 include(":platform:privilege")
-include(":platform:persistence")
 include(":platform:terminal")
 // 认知记忆宿主层（apex-kit-memory 的平台端口 / DI / 旧存储迁移 / WorkManager
 // 维护调度 / 记忆召回工具 —— 取代旧 :platform:cs-mem）

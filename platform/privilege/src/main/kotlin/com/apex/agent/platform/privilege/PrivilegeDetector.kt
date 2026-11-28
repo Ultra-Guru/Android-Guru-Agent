@@ -26,6 +26,10 @@ object PrivilegeDetector {
     @Volatile private var cachedAt: Long = 0L
     private const val CACHE_TTL_MS = 30_000L
 
+    /** #843：进程退出后排空的最小宽限（毫秒），对齐 ExecEngine 的
+     *  postKillDrainGraceMs —— 预算耗尽瞬间退出的 EOF 完成竞态不误报。 */
+    private const val POST_EXIT_DRAIN_GRACE_MS = 800L
+
     /** T92（#255）审计日志来源标识与命令截断上限。 */
     internal const val AUDIT_SOURCE = "PrivilegeDetector"
     internal const val MAX_LOG_CMD_LEN = 120
@@ -234,6 +238,11 @@ object PrivilegeDetector {
      * EOF（进程退出）才返回，长输出/不退出的进程让超时永远不会生效。改为
      * ProcessBuilder + 并发排空 + waitFor(timeout) + 超时强杀，与
      * ShizukuCommandExecutor 的防死锁模式一致。
+     *
+     * #843 修复：正常退出后的排空同样有界。孙进程继承 stdout 管道写端
+     * （setsid/nohup 守护）时 readText 永远等不到 EOF，裸 Future.get() 无限
+     * 阻塞 → executeShell 被永久钉死（非挂起工具路径）。现改走 [BoundedDrain]
+     * 有界等待（预算复用剩余 timeout + 最小宽限），超时返回部分输出并标注。
      */
     private fun executeWithTimeout(
         cmdArray: Array<String>,
@@ -252,13 +261,19 @@ object PrivilegeDetector {
             process = proc
 
             // 并发排空 stdout/stderr（防管道缓冲写满导致 waitFor 死锁）。
-            val drain = java.util.concurrent.Executors.newFixedThreadPool(2).let { pool ->
+            // #843：排空线程设 daemon —— 持管孙进程把 readText 永久钉在
+            // read() 里时，泄漏线程不得反过来扣住 JVM 退出（含测试进程）。
+            val drain = java.util.concurrent.Executors.newFixedThreadPool(2) { runnable ->
+                Thread(runnable, "privilege-drain").apply { isDaemon = true }
+            }.let { pool ->
                 val out = pool.submit<String> { runCatching { proc.inputStream.bufferedReader().readText() }.getOrDefault("") }
                 val err = pool.submit<String> { runCatching { proc.errorStream.bufferedReader().readText() }.getOrDefault("") }
                 pool.shutdown()
                 out to err
             }
             try {
+                // #843：预算锚点 —— waitFor 消耗原始预算，退出后的排空只花剩余量。
+                val deadline = System.currentTimeMillis() + timeoutMs
                 val completed = proc.waitFor(timeoutMs, TimeUnit.MILLISECONDS)
                 if (!completed) {
                     proc.destroyForcibly()
@@ -270,9 +285,32 @@ object PrivilegeDetector {
                     )
                 }
 
-                val stdout = drain.first.get()
-                val stderr = drain.second.get()
+                // #843：正常退出后的排空改有界等待（旧实现裸 get() 会被持管
+                // 孙进程无限钉死）。预算复用原 timeout 剩余量；子进程恰好在
+                // 预算耗尽瞬间退出时，给 EOF 完成竞态一个最小宽限（POST_EXIT_
+                // DRAIN_GRACE_MS，对齐 ExecEngine.postKillDrainGraceMs 的有界
+                // 宽限纪律）—— 总等待仍以「原预算 + 宽限」为硬上界。
+                val graceMs = maxOf(
+                    deadline - System.currentTimeMillis(),
+                    POST_EXIT_DRAIN_GRACE_MS
+                )
+                val drained = BoundedDrain.awaitDrain(drain.first, drain.second, graceMs)
+                if (drained.timedOut) {
+                    // 孙进程持有管道写端：纯 Java 没有进程组 kill 通道
+                    //（os.Process.killProcessGroup 是 hidden API，不可达）——
+                    // 对已退出本体的 destroyForcibly 是 no-op 尽力收尾；泄漏
+                    // 的排空线程随孙进程真正消亡自然结束，输出侧如实标注不完整。
+                    proc.destroyForcibly()
+                }
+                val stdout = drained.stdout
+                val stderr = drained.stderr
                 val exitCode = proc.exitValue()
+                val merged = when {
+                    stdout.isNotBlank() && stderr.isNotBlank() ->
+                        stdout + "\n[stderr]\n" + stderr
+                    stdout.isNotBlank() -> stdout
+                    else -> stderr
+                }
                 ShellExecResult(
                     success = exitCode == 0,
                     // P1 修复（错误信息丢失）：旧实现 `stdout.ifBlank { stderr }` 在
@@ -280,13 +318,9 @@ object PrivilegeDetector {
                     // 进度/部分输出写 stdout（git/curl/gradle 全是这个模式），模型
                     // 只看到半截 stdout 看不到失败原因，只能盲重试推高错误率。
                     // 现在 stdout 非空且 stderr 也非空时以 [stderr] 标记追加（模型
-                    // 可见完整诊断）；任一为空时行为与旧版一致。
-                    output = when {
-                        stdout.isNotBlank() && stderr.isNotBlank() ->
-                            stdout + "\n[stderr]\n" + stderr
-                        stdout.isNotBlank() -> stdout
-                        else -> stderr
-                    },
+                    // 可见完整诊断）；任一为空时行为与旧版一致。#843：排空超时
+                    // 时在合并结果末尾追加部分输出标记（合并契约不变，末行拼接）。
+                    output = if (drained.timedOut) BoundedDrain.withPartialMarker(merged) else merged,
                     exitCode = exitCode,
                     via = via
                 )
