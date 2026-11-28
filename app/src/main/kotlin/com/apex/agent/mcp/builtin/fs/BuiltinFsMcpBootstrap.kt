@@ -22,7 +22,7 @@ import kotlinx.coroutines.launch
  */
 object BuiltinFsMcpBootstrap {
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = com.apex.agent.di.AppScopes.io("BuiltinFsMcpBootstrap")
 
     fun ensureAndConnect(manager: McpManager) {
         scope.launch {

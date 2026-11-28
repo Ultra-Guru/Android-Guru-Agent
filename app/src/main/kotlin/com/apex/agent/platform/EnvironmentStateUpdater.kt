@@ -65,7 +65,7 @@ class EnvironmentStateUpdater @Inject constructor(
     private val prootSmokeProbe: PRootSmokeProbe
 ) {
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val scope = com.apex.agent.di.AppScopes.default("EnvironmentStateUpdater")
 
     @Volatile
     private var started = false

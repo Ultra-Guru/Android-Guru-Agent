@@ -45,7 +45,7 @@ class DynamicLlmClient(
     private val lang: LanguageManager? = null
 ) : LlmClient {
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val scope = com.apex.agent.di.AppScopes.default("DynamicLlmClient")
 
     @Volatile
     private var delegate: LlmClient = buildDelegate(effectiveConfig(repo.defaultLlmConfig()))

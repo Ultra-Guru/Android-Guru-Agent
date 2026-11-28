@@ -437,7 +437,7 @@ class BuiltinGithubMcpTransport(
  */
 object BuiltinGithubMcpBootstrap {
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = com.apex.agent.di.AppScopes.io("BuiltinGithubMcpTransport")
 
     fun ensureAndConnect(manager: McpManager) {
         scope.launch {

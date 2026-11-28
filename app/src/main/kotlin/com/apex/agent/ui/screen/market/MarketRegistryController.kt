@@ -72,7 +72,7 @@ class MarketRegistryController @Inject constructor(
         val pulseTenantIdDraft: String = ""
     )
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val scope = com.apex.agent.di.AppScopes.mainImmediate("MarketRegistryController")
 
     private val _uiState = MutableStateFlow(
         RegistryUiState(pulseCredentialsSet = pulseCredentials.isConfigured())

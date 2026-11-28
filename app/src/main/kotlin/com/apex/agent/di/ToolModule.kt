@@ -291,7 +291,7 @@ object ToolModule {
     fun provideHookRegistry(@ApplicationContext context: Context): HookRegistry =
         HookRegistry(
             configDir = File(context.filesDir, "hooks"),
-            scope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
+            scope = com.apex.agent.di.AppScopes.io("ToolModule"),
             errorLog = { message ->
                 AppLogger.instance.warn(LogCategory.PLUGIN, "HookRegistry", message)
             }
@@ -307,7 +307,7 @@ object ToolModule {
     fun provideHookRunner(hookRegistry: HookRegistry): HookRunner =
         HookRegistryHookRunner(
             registry = hookRegistry,
-            scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+            scope = com.apex.agent.di.AppScopes.io("ToolModule")
         )
 
     // ═══ 工具使用统计 / v3 环境态 / 追踪 / 熔断 / 组合动作 / v4 会话激活

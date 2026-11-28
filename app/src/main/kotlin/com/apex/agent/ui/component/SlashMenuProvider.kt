@@ -66,7 +66,7 @@ class SlashMenuProvider @Inject constructor(
     // i18n：菜单分组/提示文案按当前语言取词（组合外场景）
     private val languageManager: LanguageManager
 ) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val scope = com.apex.agent.di.AppScopes.default("SlashMenuProvider")
 
     // v2：初始为空菜单，首建移到后台协程（构造在主线程发生，绝不能扫盘/IPC）
     private val _menu = MutableStateFlow(SlashMenuData(emptyList()))

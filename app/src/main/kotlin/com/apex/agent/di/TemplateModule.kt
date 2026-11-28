@@ -45,7 +45,7 @@ object TemplateModule {
         )
         // 播种作用域与 PluginModule/ToolModule 同款纪律：单例自持
         // SupervisorJob + IO，异常只留痕不外抛（DI provide 不允许抛）。
-        val seedScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val seedScope = com.apex.agent.di.AppScopes.io("TemplateModule")
         seedScope.launch {
             runCatching { registry.reseedBuiltIns() }
                 .onFailure { Log.w("TemplateModule", "seed built-in templates failed: ${it.message}") }

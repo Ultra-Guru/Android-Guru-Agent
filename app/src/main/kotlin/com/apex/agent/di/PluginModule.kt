@@ -49,7 +49,7 @@ import kotlinx.coroutines.SupervisorJob
 object PluginModule {
 
     /** 功能性插件注册表流对账专用 scope（失败隔离，不殊及其它单例初始化）。 */
-    private val pluginScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val pluginScope = com.apex.agent.di.AppScopes.io("PluginModule")
 
     @Provides
     @Singleton

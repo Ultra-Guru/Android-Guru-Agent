@@ -93,7 +93,7 @@ class ApexCoreService : LifecycleService() {
     @Inject
     lateinit var foregroundTracker: ForegroundTracker
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val scope = com.apex.agent.di.AppScopes.default("ApexCoreService")
 
     override fun onCreate() {
         super.onCreate()
@@ -197,7 +197,7 @@ class ApexCoreService : LifecycleService() {
         // 收尾权在 MainActivity，且 coordinator 状态由下次服务启动 reconcile。
         runCatching { searxngCoordinator.onHostShutdown() }
         if (!foregroundTracker.isForeground) {
-            CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            com.apex.agent.di.AppScopes.io("ApexCoreService").launch {
                 runCatching {
                     withTimeout(10_000L) { terminalRuntime.shutdown() }
                 }.onSuccess { result ->

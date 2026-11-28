@@ -39,12 +39,12 @@ object SkillModule {
      * 模块级单发协程（provideSkillRegistry 每进程只构造一次单例），
      * 不存在重复释放窗口。
      */
-    private val bundledReleaseScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val bundledReleaseScope = com.apex.agent.di.AppScopes.io("SkillModule")
 
     /**
      * 技能目录监听 scope（热加载触发侧，与释放管线分属两个独立单发协程）。
      */
-    private val directoryWatchScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val directoryWatchScope = com.apex.agent.di.AppScopes.io("SkillModule")
 
     @Provides
     @Singleton

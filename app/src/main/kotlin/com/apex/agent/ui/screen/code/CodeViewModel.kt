@@ -275,7 +275,7 @@ class CodeViewModel @Inject constructor(
      * 会话落盘的独立 scope：viewModelScope 在 onCleared 之前就被取消，
      * 最后一次冲刷必须有地方落地。Job 短命（单次文件写），无泄漏之虞。
      */
-    private val persistScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val persistScope = com.apex.agent.di.AppScopes.io("CodeViewModel")
 
     internal val codeEngineImpl: CodeEngineFacade?
         get() = codeEngine as? CodeEngineFacade

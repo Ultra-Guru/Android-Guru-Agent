@@ -52,7 +52,7 @@ class FusionBundleController @Inject constructor(
     @javax.inject.Named("code")
     private val engineLazy: dagger.Lazy<com.apex.agent.core.engine.AgentEngine>
 ) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = com.apex.agent.di.AppScopes.io("FusionBundleController")
     private val prefs: SharedPreferences =
         appContext.getSharedPreferences("fusion_bundle", Context.MODE_PRIVATE)
 

@@ -39,7 +39,7 @@ class LanguageManager @Inject constructor(
     settingsRepository: SettingsRepository
 ) {
     /** 单例自管理作用域（跟随进程生命周期；仅收集设置流，无泄漏面）。 */
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val scope = com.apex.agent.di.AppScopes.mainImmediate("LanguageManager")
 
     private val _language = MutableStateFlow(settingsRepository.agentSettings.value.language)
 

@@ -163,7 +163,7 @@ class UsageLedger @Inject constructor(
     private var loaded = false
 
     /** 内部落盘作用域 —— 账本为 @Singleton 与进程同寿，无需 cancel。 */
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = com.apex.agent.di.AppScopes.io("UsageLedger")
 
     private val usageDir = File(context.filesDir, "usage")
     private val file = File(usageDir, "usage_records.jsonl")

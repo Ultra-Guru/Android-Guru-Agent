@@ -217,7 +217,7 @@ class BuiltinSearchMcpTransport(
  */
 object BuiltinSearchMcpBootstrap {
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = com.apex.agent.di.AppScopes.io("BuiltinSearchMcpTransport")
 
     fun ensureAndConnect(manager: McpManager) {
         scope.launch {
