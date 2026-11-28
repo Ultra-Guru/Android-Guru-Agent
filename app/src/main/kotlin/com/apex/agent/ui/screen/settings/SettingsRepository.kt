@@ -266,6 +266,49 @@ class SettingsRepository @Inject constructor(
         persistProfiles()
     }
 
+    /**
+     * #853 — 从 SharedPreferences 重读四域并回灌内存 StateFlow。
+     *
+     * 恢复/导入路径（BackupManager.import）直写 SP；而本仓库全部持久化都
+     * 源自内存快照整体写回（persist*，无任何 reload 通道）——不回灌时，
+     * 恢复后任意一次设置编辑（upsertProvider / updateRoles /
+     * updateAgentSettings…）会把**恢复前的陈旧快照**写回对应键，刚导入的
+     * providers / profiles / roles / agent 设置（含 permissionMode 等安全
+     * 相关配置）被静默回滚。导入方在写盘成功后立即调用本方法。
+     *
+     * 语义（逻辑核 [parseReloadDomains]，可纯 JVM 单测）：
+     * - 键存在且解析成功 → 回灌该域；
+     * - 键缺失（导入 bundle 未携带）→ 维持当前内存值；
+     * - 解析失败 → 经 [onCorrupt] 留痕（保留原始串 + 本进程禁写）并维持
+     *   当前内存值 —— 不把用户带回默认态，与 init 的损坏纪律一致；
+     * - 不做种子/迁移写盘（键已由导入方写入；legacy 迁移已在 init 完成）；
+     * - providers 走 [migrateAndHydrateApiKeys]（导入侧落盘的是脱敏副本，
+     *   内存副本从加密区补 Key —— 与 init 同一条水合管线）。
+     */
+    fun reload() {
+        val reload = parseReloadDomains(
+            rawProviders = prefs.getString(KEY_PROVIDERS, null),
+            rawProfiles = prefs.getString(KEY_PROFILES, null),
+            rawRoles = prefs.getString(KEY_ROLES, null),
+            rawAgent = prefs.getString(KEY_AGENT, null),
+            current = SettingsDomains(
+                providers = _providers.value,
+                profiles = _profiles.value,
+                roles = _roles.value,
+                agentSettings = _agentSettings.value
+            ),
+            json = json
+        )
+        reload.corruptKeys.forEach { key ->
+            val raw = prefs.getString(key, null) ?: return@forEach
+            onCorrupt(key, raw)
+        }
+        _providers.value = migrateAndHydrateApiKeys(reload.domains.providers)
+        _profiles.value = reload.domains.profiles
+        _roles.value = reload.domains.roles
+        _agentSettings.value = reload.domains.agentSettings
+    }
+
     // ── Provider 增改 ──────────────────────────────────────────
     fun upsertProvider(provider: ProviderConfig) {
         // Key 一旦出现在 incoming 里就立即入加密区，绝不随 Provider 一起明文落盘
@@ -465,6 +508,62 @@ internal fun migratePermissionDefaultBypass(settings: AgentSettings): AgentSetti
     if (settings.permissionBypassMigrated) return settings
     return settings.copy(permissionBypassMigrated = true)
 }
+
+/**
+ * #853 — 四域内存快照（[parseReloadDomains] 的进出参数）。
+ *
+ * internal：同包纯 JVM 单测（SettingsReloadTest）直接构造。
+ */
+internal data class SettingsDomains(
+    val providers: List<ProviderConfig>,
+    val profiles: List<ModelProfile>,
+    val roles: ModelRoleConfig,
+    val agentSettings: AgentSettings,
+)
+
+/**
+ * #853 — [SettingsRepository.reload] 的纯逻辑核（可单测）。
+ *
+ * 逐域规则：键 null（bundle 未携带）或解析失败 → **维持当前内存值**
+ * （返回原引用；损坏键名收进 [SettingsReload.corruptKeys] 供调用方
+ * onCorrupt 留痕）；解析成功 → 回灌解析值（agent 域顺手走
+ * [migratePermissionDefaultBypass]，与 init 读侧同一条迁移）。
+ */
+internal fun parseReloadDomains(
+    rawProviders: String?,
+    rawProfiles: String?,
+    rawRoles: String?,
+    rawAgent: String?,
+    current: SettingsDomains,
+    json: Json
+): SettingsReload {
+    val corrupt = mutableListOf<String>()
+
+    val providers = rawProviders?.let { raw ->
+        runCatching { json.decodeFromString<List<ProviderConfig>>(raw) }.getOrNull()
+    } ?: current.providers.also { if (rawProviders != null) corrupt += "model_providers_v2" }
+
+    val profiles = rawProfiles?.let { raw ->
+        runCatching { json.decodeFromString<List<ModelProfile>>(raw) }.getOrNull()
+    } ?: current.profiles.also { if (rawProfiles != null) corrupt += "model_profiles_v2" }
+
+    val roles = rawRoles?.let { raw ->
+        runCatching { json.decodeFromString<ModelRoleConfig>(raw) }.getOrNull()
+    } ?: current.roles.also { if (rawRoles != null) corrupt += "model_roles_v2" }
+
+    val agent = rawAgent?.let { raw ->
+        runCatching { json.decodeFromString<AgentSettings>(raw) }.getOrNull()
+            ?.let { migratePermissionDefaultBypass(it) }
+    } ?: current.agentSettings.also { if (rawAgent != null) corrupt += "agent_settings_v2" }
+
+    return SettingsReload(SettingsDomains(providers, profiles, roles, agent), corrupt)
+}
+
+/** [parseReloadDomains] 的结果：回灌后的四域 + 解析失败的键名。 */
+internal data class SettingsReload(
+    val domains: SettingsDomains,
+    val corruptKeys: List<String>,
+)
 
 /**
  * 运行参数（Agent 模式移除后的收敛版：只保留 Coding 工位与通用层仍在
