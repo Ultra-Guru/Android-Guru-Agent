@@ -184,3 +184,53 @@ class PrivilegeDetectorAuditTest {
         assertEquals("'it'\\''s'", PrivilegeDetector.shellQuote("it's"))
     }
 }
+
+// ── #843：排空 deadline —— 孙进程持有管道写端时调用方不再被无界钉死 ──
+
+class PrivilegeDetectorDrainDeadlineTest {
+
+    /**
+     * `sh -c 'sleep 30 & exit 0'`：直接子进程（sh）立即退出，孙进程
+     * （sleep 30）继承 stdout 管道写端 → 排空线程拿不到 EOF。
+     * 旧实现 `drain.get()` 无界阻塞，本测试会挂死（JVM 单测默认无超时
+     * 硬杀 —— 以 duration 断言收敛）。宿主环境无 su/Shizuku → shell 通道
+     * 真实 fork（与既有 echo 类测试同一执行面）。
+     */
+    @Test
+    fun `executeShell 收敛于孙进程持有管道写端`() = runBlocking {
+        val start = System.currentTimeMillis()
+        val result = PrivilegeDetector.executeShell(
+            "sh -c 'sleep 30 & exit 0'",
+            timeoutMs = 1_500
+        )
+        val duration = System.currentTimeMillis() - start
+        // 1.5s 超时 + 排空 deadline（下限 200ms）≈ 2s 内必须返回；
+        // 旧实现在此处永久阻塞。
+        assertTrue(
+            "must return near timeout instead of hanging (took ${duration}ms)",
+            duration < 15_000
+        )
+        // 部分输出 + 明示截断（模型可理解可重试，不是静默半截）。
+        assertTrue(
+            "drain truncation must be explicit (output: ${result.output})",
+            result.output.contains("[drain truncated")
+        )
+        // 子进程正常退出码仍在（exit 0 —— 卡的是输出管道，不是命令本身）。
+        assertEquals(0, result.exitCode)
+    }
+
+    /** 正常快命令：deadline 不引入额外延迟（EOF 即返回，输出完整无截断标记）。 */
+    @Test
+    fun `executeShell 快命令不受排空 deadline 影响`() = runBlocking {
+        val start = System.currentTimeMillis()
+        val result = PrivilegeDetector.executeShell(
+            "echo fast-drain-probe",
+            timeoutMs = 5_000
+        )
+        val duration = System.currentTimeMillis() - start
+        assertTrue("fast command should complete well under timeout (took ${duration}ms)", duration < 4_000)
+        assertTrue(result.output.contains("fast-drain-probe"))
+        assertTrue("no truncation marker expected", !result.output.contains("[drain truncated"))
+        assertEquals(0, result.exitCode)
+    }
+}

@@ -31,6 +31,9 @@ object PrivilegeDetector {
     internal const val MAX_LOG_CMD_LEN = 120
     private val whitespaceRun = Regex("\\s+")
 
+    /** #843：waitFor 之后排空窗口下限（极快命令也留出排空时间）。 */
+    private const val DRAIN_MIN_MS = 200L
+
     /**
      * 失效权限缓存。Shizuku binder 死亡 / 用户手动起停 Shizuku 时调用。
      */
@@ -234,6 +237,17 @@ object PrivilegeDetector {
      * EOF（进程退出）才返回，长输出/不退出的进程让超时永远不会生效。改为
      * ProcessBuilder + 并发排空 + waitFor(timeout) + 超时强杀，与
      * ShizukuCommandExecutor 的防死锁模式一致。
+     *
+     * #843：排空 deadline —— 直接子进程已退出、但**孙进程**（`su -c
+     * 'nohup x &'` / 守护化命令 / proot 遗留）仍持有 stdout 管道写端时，
+     * 排空线程拿不到 EOF，旧实现 `drain.get()` 无界阻塞 → 调用线程
+     * （IO worker）被永久钉死（`cancel(true)` 无法中断 native read），
+     * 长会话累积耗尽 Dispatchers.IO。现在：
+     * - 排空改「共享缓冲 + 分块 append」：drain 超时后**已收集部分**仍可读
+     *   （Future.get(timeout) 拿不到部分输出）；
+     * - waitFor 之后的 get() 以 timeoutMs 剩余份额为 deadline，超时按
+     *   「命令已退出但输出不完整」收口（明示截断标记，模型可理解可重试）；
+     * - 超时路径 best-effort 关闭流 + shutdownNow，尽量唤醒残留排空线程。
      */
     private fun executeWithTimeout(
         cmdArray: Array<String>,
@@ -250,18 +264,23 @@ object PrivilegeDetector {
             }
             val proc = pb.start()
             process = proc
+            val startMs = System.currentTimeMillis()
 
             // 并发排空 stdout/stderr（防管道缓冲写满导致 waitFor 死锁）。
-            val drain = java.util.concurrent.Executors.newFixedThreadPool(2).let { pool ->
-                val out = pool.submit<String> { runCatching { proc.inputStream.bufferedReader().readText() }.getOrDefault("") }
-                val err = pool.submit<String> { runCatching { proc.errorStream.bufferedReader().readText() }.getOrDefault("") }
-                pool.shutdown()
-                out to err
+            // #843：守护线程 —— 孙进程持写端时排空线程可能滞留到孙进程退出，
+            // 绝不能因它们是普通线程而拖住 JVM/测试进程的退出。
+            val stdoutBuf = StringBuilder()
+            val stderrBuf = StringBuilder()
+            val pool = java.util.concurrent.Executors.newFixedThreadPool(2) { r ->
+                Thread(r, "privilege-drain").apply { isDaemon = true }
             }
+            val drainOut = submitDrain(pool, proc.inputStream, stdoutBuf)
+            val drainErr = submitDrain(pool, proc.errorStream, stderrBuf)
             try {
                 val completed = proc.waitFor(timeoutMs, TimeUnit.MILLISECONDS)
                 if (!completed) {
                     proc.destroyForcibly()
+                    releaseDrain(proc, pool, drainOut, drainErr)
                     return ShellExecResult(
                         success = false,
                         output = "Command timed out after ${timeoutMs}ms",
@@ -270,9 +289,29 @@ object PrivilegeDetector {
                     )
                 }
 
-                val stdout = drain.first.get()
-                val stderr = drain.second.get()
+                // #843：排空 deadline = timeoutMs 剩余份额（下限 DRAIN_MIN_MS
+                // 防极快完成的命令拿不到排空窗口）。
+                val elapsed = System.currentTimeMillis() - startMs
+                val drainDeadline = (timeoutMs - elapsed).coerceAtLeast(DRAIN_MIN_MS)
+                val drained = runCatching {
+                    drainOut.get(drainDeadline, TimeUnit.MILLISECONDS)
+                    drainErr.get(drainDeadline, TimeUnit.MILLISECONDS)
+                    true
+                }.getOrDefault(false)
+                val stdout = synchronized(stdoutBuf) { stdoutBuf.toString() }
+                val stderr = synchronized(stderrBuf) { stderrBuf.toString() }
                 val exitCode = proc.exitValue()
+                if (!drained) {
+                    // 子进程已退出但管道写端仍被孙进程持有：按部分输出收口。
+                    releaseDrain(proc, pool, drainOut, drainErr)
+                    return ShellExecResult(
+                        success = false,
+                        output = partialDrainOutput(stdout, stderr, drainDeadline),
+                        exitCode = exitCode,
+                        via = via
+                    )
+                }
+                pool.shutdown()
                 ShellExecResult(
                     success = exitCode == 0,
                     // P1 修复（错误信息丢失）：旧实现 `stdout.ifBlank { stderr }` 在
@@ -291,14 +330,66 @@ object PrivilegeDetector {
                     via = via
                 )
             } finally {
-                drain.first.cancel(true)
-                drain.second.cancel(true)
+                drainOut.cancel(true)
+                drainErr.cancel(true)
             }
         } catch (e: Exception) {
             ShellExecResult(false, "${via} exec failed: ${e.message}", -1, via)
         } finally {
             process?.let { if (it.isAlive) it.destroyForcibly() }
         }
+    }
+
+    /**
+     * #843 — 排空任务：分块 append 进共享缓冲（而非 readText 整体返回），
+     * 使 deadline 超时后已收集部分仍可读。流关闭/池中断时保留部分内容。
+     */
+    private fun submitDrain(
+        pool: java.util.concurrent.ExecutorService,
+        stream: java.io.InputStream,
+        shared: StringBuilder
+    ): java.util.concurrent.Future<*> = pool.submit {
+        try {
+            val reader = stream.bufferedReader()
+            val buf = CharArray(2048)
+            while (true) {
+                val n = reader.read(buf)
+                if (n < 0) break
+                if (n > 0) synchronized(shared) { shared.appendRange(buf, 0, n) }
+            }
+        } catch (_: Exception) {
+            // 流被对端关闭 / releaseDrain 的 shutdownNow 中断：保留已收集部分。
+        }
+    }
+
+    /**
+     * #843 — 排空超时/进程超时后的资源收口：best-effort 关闭两个流（唤醒
+     * 阻塞在 native read 的排空线程）+ shutdownNow。孙进程仍持有写端时
+     * 排空线程可能要等其退出才消亡 —— 但调用方已被 deadline 解放，不再
+     * 累积钉死 IO worker。
+     */
+    private fun releaseDrain(
+        proc: Process,
+        pool: java.util.concurrent.ExecutorService,
+        vararg drains: java.util.concurrent.Future<*>
+    ) {
+        drains.forEach { it.cancel(true) }
+        runCatching { proc.inputStream.close() }
+        runCatching { proc.errorStream.close() }
+        pool.shutdownNow()
+    }
+
+    /** #843 — 排空超时的输出形态：已收集部分 + 明示截断（模型可理解可重试）。 */
+    private fun partialDrainOutput(stdout: String, stderr: String, waitedMs: Long): String {
+        val collected = when {
+            stdout.isNotBlank() && stderr.isNotBlank() -> stdout + "\n[stderr]\n" + stderr
+            stdout.isNotBlank() -> stdout
+            stderr.isNotBlank() -> stderr
+            else -> "(no output captured before drain deadline)"
+        }
+        return collected +
+            "\n[drain truncated: process exited but a child process still holds the output pipe; " +
+            "output above may be incomplete (waited ${waitedMs}ms)]"
     }
 }
 
