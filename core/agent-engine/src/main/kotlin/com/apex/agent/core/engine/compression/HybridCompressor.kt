@@ -1,5 +1,6 @@
 package com.apex.agent.core.engine.compression
 
+import com.apex.agent.core.engine.ToolOutputEnvelope
 import com.apex.agent.core.llm.LlmClient
 import com.apex.agent.core.llm.LlmMessage
 import com.apex.agent.core.llm.runtime.ModelRuntime
@@ -116,11 +117,21 @@ class HybridCompressor(
         for (i in history.indices) {
             val msg = history[i]
             if (msg is LlmMessage.ToolResult && msg.content.length > toolTruncator.maxChars) {
-                val result = toolTruncator.smartTruncate(msg.content, "")
+                // #831：历史中的工具输出带定界信封（EngineToolExecution 写入时
+                // 包裹）—— 二次截断必须先拆信封再截：直接截会把闭合标签切掉
+                // （模型看到永不闭合的 <tool_output>），且信封前缀会废掉
+                // payload 的 JSON 形态检测（exit_code 字段级截断失效）。
+                // 截完包回，开标签的真实工具名还顺带给截断器做工具定制策略。
+                val envelope = ToolOutputEnvelope.unwrapOrNull(msg.content)
+                val payload = envelope?.payload ?: msg.content
+                val result = toolTruncator.smartTruncate(payload, envelope?.toolName ?: "")
                 if (result.truncated) {
+                    val content = envelope?.let {
+                        ToolOutputEnvelope.wrap(it.toolName, it.toolCallId, result.text)
+                    } ?: result.text
                     history[i] = LlmMessage.ToolResult(
                         toolCallId = msg.toolCallId,
-                        content = result.text
+                        content = content
                     )
                     truncatedCount++
                 }
