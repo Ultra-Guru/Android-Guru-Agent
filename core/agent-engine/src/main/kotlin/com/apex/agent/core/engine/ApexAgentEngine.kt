@@ -907,6 +907,7 @@ class ApexAgentEngine(
                 serviceToolIds = connectedServicesProvider?.connectedToolIds() ?: emptySet()
             )
             currentToolPlan = plan
+            EnginePlanDiagnostics.reportDropped(plan)
 
             val messages = buildMessages()
             // P97：AFTER_SEND fire-and-forget（无钩子零开销，不阻塞回包）
