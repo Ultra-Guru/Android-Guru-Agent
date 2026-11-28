@@ -165,10 +165,24 @@ class TerminalProactivityAdvisor {
             append(userPrompt.lowercase())
             recentOneShotArgs.forEach { append(' '); append(it.lowercase()) }
         }
-        return TOOLCHAIN_KEYWORDS.any { haystack.contains(it) }
+        // 真机 P1 修复：词边界匹配 —— 旧裸子串让「make it / make sure」「node_modules /
+        // nodes」「pipeline」命中 make / node / pip，agent 被注入「先装 Ubuntu」
+        // （TerminalUbuntuEnsure 预算 30 分钟）：让它改个按钮，它先去装系统。
+        return TOOLCHAIN_SIGNALS.any { it.containsMatchIn(haystack) }
     }
 
     companion object {
+
+        /** 工具链关键词（词边界匹配，见 [TOOLCHAIN_SIGNALS]）。 */
+        val TOOLCHAIN_KEYWORDS = listOf(
+            "apt-get", "apt install", "git clone", "npm", "yarn", "pip",
+            "cargo", "make", "gcc", "python3", "node", "cmake"
+        )
+
+        /** 预编译的词边界信号（前后不能是字母/数字/下划线；中英文混排同样成立）。 */
+        private val TOOLCHAIN_SIGNALS: List<Regex> = TOOLCHAIN_KEYWORDS.map { kw ->
+            Regex("(?<![A-Za-z0-9_])" + Regex.escape(kw) + "(?![A-Za-z0-9_])")
+        }
         /** 一次性（无会话）shell 工具：streak 计数与失败追踪的对象。 */
         val ONE_SHOT_TOOLS = setOf("ShellExecute", "TerminalExec")
 
@@ -182,15 +196,6 @@ class TerminalProactivityAdvisor {
         val UBUNTU_PROBE_TOOLS = setOf(
             "TerminalUbuntuEnsure",
             "TerminalUbuntuStatus", "TerminalBackends"
-        )
-
-        /**
-         * 工具链关键词（小写子串匹配）。与 EnginePrompts Terminal-Use
-         * Policy 第 4 条的工具链清单同源。
-         */
-        val TOOLCHAIN_KEYWORDS = listOf(
-            "apt-get", "apt install", "git clone", "npm", "yarn", "pip",
-            "cargo", "make", "gcc", "python3", "node", "cmake"
         )
 
         /** SESSION_FLOW 触发阈值：连续一次性 shell 完成数。 */

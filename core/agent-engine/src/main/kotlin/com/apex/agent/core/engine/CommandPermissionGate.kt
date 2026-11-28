@@ -48,61 +48,69 @@ class CommandPermissionGate(
         return stripped.filter { it !in quoteChars }
     }
 
-    private val highRiskPatterns = listOf(
-        "rm ",
-        "rm -",
-        "rmdir",
-        "reboot",
-        "shutdown",
-        "poweroff",
-        "dd ",
-        "mkfs",
-        "format",
-        "pm uninstall",
-        "pm clear",
-        "pm disable",
-        "pm enable",
-        "am force-stop",
-        "settings put",
-        "settings delete",
-        "su ",
-        "su -c",
-        "chmod 777",
-        "chmod 0777",
-        "chown",
-        "mount",
-        "umount",
-        "> /dev/",
-        // v3：系统目录重定向逃逸 —— `> /etc/passwd` 这类直接改写系统文件的
-        // 重定向不在旧表内（双模式下 Ubuntu 根的 /etc 是 rootfs 内部文件，
-        // 破坏后影响所有后续会话）。>> 追加变体同納。
-        "> /etc/",
-        ">> /etc/",
-        "> /system",
-        ">> /system",
-        "> /proc",
-        "> /sys/",
-        ">> /sys/",
-        "killall",
-        "pkill",
+    // 真机 P0 修复：高危模式改为**词边界**匹配（旧实现对整条命令做 `contains`，
+    // `git add .`命中 "dd "、`platform `/`confirm `/`transform ` 命中 "rm "、
+    // `--format`/`npm run format` 命中 "format" —— 编码 agent 最高频的 git 工作流
+    // 每步弹「危险命令」，后台时更按 5 分钟超时拒绝；仓库自己的测试注释曾承认
+    // 「git add 本就会确认」）。两类模式：
+    // - 命令词（rm / dd / su / mount …）：前一字符不能是字母/数字/下划线/连字符
+    //   （`git add`≠dd、`--format`≠format、`clang-format`≠format），后一字符不能
+    //   是字母数字下划线（`sudo`≠su、`mountpoint`≠mount）；`/bin/rm`、`busybox rm`、
+    //   `VAR=1 rm`（剥离前缀后）仍命中。
+    // - 短语（pm uninstall / reset --hard …）：首词要求词边界，按归一化空白匹配；
+    //   flag 型短语允许后接其它 flag 字母（`clean -fd` / `clean -fdx`）。
+    // - 重定向类（> /dev/ 等）保持纯子串。
+    // "format" 已移除：Linux/Android 无此破坏性二进制（mkfs 已单列），它只制造
+    // `npm run format` / `--format` 误报。
+    private val wordBefore = "(?<![A-Za-z0-9_-])"
+    private val wordAfter = "(?![A-Za-z0-9_])"
+
+    private fun commandWords(vararg names: String): List<Regex> =
+        names.map { Regex(wordBefore + Regex.escape(it) + wordAfter) }
+
+    private fun phrase(pattern: String, after: String = "(?=\\s|$)"): Regex =
+        Regex(wordBefore + Regex.escape(pattern) + after)
+
+    private val highRiskPatterns: List<Regex> = buildList {
+        addAll(
+            commandWords(
+                "rm", "rmdir", "reboot", "shutdown", "poweroff", "dd", "mkfs",
+                "chown", "mount", "umount", "fusermount", "killall", "pkill", "su"
+            )
+        )
+        add(phrase("pm uninstall", wordAfter))
+        add(phrase("pm clear", wordAfter))
+        add(phrase("pm disable", wordAfter))
+        add(phrase("pm enable", wordAfter))
+        add(phrase("am force-stop", wordAfter))
+        add(phrase("settings put", wordAfter))
+        add(phrase("settings delete", wordAfter))
+        add(Regex(wordBefore + "chmod 0?777(?![0-7])"))
+        // 重定向到设备 / 系统目录（纯子串，见上）
+        addAll(
+            listOf(
+                "> /dev/", "> /etc/", ">> /etc/", "> /system", ">> /system",
+                "> /proc", "> /sys/", ">> /sys/"
+            ).map { Regex(Regex.escape(it)) }
+        )
         // Git 审计 P0-6（纵深防御）：git 破坏性/配置逃逸命令此前零覆盖，
-        // TerminalExec 里的 `git push --force` 等全部直通。这里按子串匹配
+        // TerminalExec 里的 `git push --force` 等全部直通。这里按词边界短语匹配
         // 补齐经典破坏性形态——CodeGitRun 通道的精确分类在 GitCommandPolicy
         // （解析后 argv），本表是自由命令通道的兜底（粗粒度，宁误伤不漏放）。
-        "reset --hard",
-        "push --force",
-        "push -f ",
-        "clean -f",
         // 注意:isHighRisk 对命令 lowercase 后匹配——模式必须全小写
         // ("branch -D" 永不命中大写原文被小写化后的文本);副作用:小写化后
         // "git -C <dir>" 与 "git -c <k=v>" 无法区分,一并保守确认
-        "branch -d",
-        "filter-branch",
-        "reflog expire",
-        "update-ref -d",
-        "git -c ",
-        "git config "
-    )
+        add(phrase("reset --hard", wordAfter))
+        add(phrase("push --force", wordAfter))
+        add(phrase("push -f"))
+        add(phrase("clean -f", "(?=\\s|[a-z-]|$)"))
+        add(phrase("branch -d"))
+        add(phrase("filter-branch", wordAfter))
+        add(phrase("reflog expire", wordAfter))
+        add(phrase("update-ref -d"))
+        add(phrase("git -c"))
+        add(phrase("git config"))
+    }
 
     /**
      * 高危命令确认。
@@ -167,11 +175,11 @@ class CommandPermissionGate(
 
     private fun isHighRisk(command: String): Boolean {
         val lower = command.lowercase()
-        // 双基准：① 原文子串（捕获嵌入链 pm uninstall / > /dev/ 等）
+        // 双基准：① 原文（捕获嵌入链 pm uninstall / > /dev/ 等）
         //          ② 剥离 VAR= 前缀 + 引号混淆后的文本（防 "r"m / VAR=1 rm 前缀逃逸）
         val deobfuscated = stripObfuscation(lower)
         return highRiskPatterns.any { pattern ->
-            lower.contains(pattern) || deobfuscated.contains(pattern)
+            pattern.containsMatchIn(lower) || pattern.containsMatchIn(deobfuscated)
         }
     }
 

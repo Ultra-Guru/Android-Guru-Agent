@@ -106,34 +106,47 @@ class UserQuestionBridge : UserQuestionGateway {
 
     private var answerDeferred: CompletableDeferred<AgentAnswer>? = null
 
+    /**
+     * 真机 P0 修复：并发提问**串行化**。旧实现单槽覆盖 —— 引擎并行派发工具块
+     * （`toolCallParallelism ≥ 2`）时两个需确认的工具同时 `ask`，后者直接覆盖
+     * 前者的 `answerDeferred`，前者永远无人能答、挂满 5 分钟后按超时拒绝。
+     * 现第二问排队等前一问收场（每问各自计超时）；排队等待可取消 —— 引擎
+     * abort 取消工具协程时排队者一并唤醒，不会遗留幽灵提问。
+     */
+    private val askMutex = kotlinx.coroutines.sync.Mutex()
+
     override suspend fun ask(question: AgentQuestion): AgentAnswer {
+        askMutex.lock()
         val deferred = CompletableDeferred<AgentAnswer>()
-
-        synchronized(this) {
-            answerDeferred = deferred
-            _pendingQuestion.value = question
-        }
-
-        return try {
-            withTimeout(question.timeoutMs) {
-                deferred.await()
-            }
-        } catch (e: TimeoutCancellationException) {
-            // #215：超时按「未决」折叠并对外通知 —— timedOut=true 让调用方
-            // （风险门/权限门）能把超时与用户显式跳过/取消区分开。
-            _questionExpired.tryEmit(question)
-            AgentAnswer(
-                questionId = question.id,
-                skipped = true,
-                timedOut = true
-            )
-        } finally {
+        try {
             synchronized(this) {
-                if (answerDeferred === deferred) {
-                    answerDeferred = null
-                    _pendingQuestion.value = null
+                answerDeferred = deferred
+                _pendingQuestion.value = question
+            }
+
+            return try {
+                withTimeout(question.timeoutMs) {
+                    deferred.await()
+                }
+            } catch (e: TimeoutCancellationException) {
+                // #215：超时按「未决」折叠并对外通知 —— timedOut=true 让调用方
+                // （风险门/权限门）能把超时与用户显式跳过/取消区分开。
+                _questionExpired.tryEmit(question)
+                AgentAnswer(
+                    questionId = question.id,
+                    skipped = true,
+                    timedOut = true
+                )
+            } finally {
+                synchronized(this) {
+                    if (answerDeferred === deferred) {
+                        answerDeferred = null
+                        _pendingQuestion.value = null
+                    }
                 }
             }
+        } finally {
+            askMutex.unlock()
         }
     }
 
