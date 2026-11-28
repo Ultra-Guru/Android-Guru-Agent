@@ -7,7 +7,7 @@ import com.apex.agent.core.engine.orchestrator.FakeToolRegistry
 import com.apex.agent.core.llm.ImageContent
 import com.apex.agent.core.llm.LlmMessage
 import kotlinx.coroutines.flow.toList
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -29,7 +29,7 @@ class EngineHistoryImagesTest {
     )
 
     @Test
-    fun `aged history images are evicted before request assembly`() = runBlocking {
+    fun `aged history images are evicted before request assembly`() = runTest {
         val fake = FakeLlmClient(
             responses = (1..4).map { FakeLlmClient.ScriptedResponse.Ok(content = "回复$it") }
         )

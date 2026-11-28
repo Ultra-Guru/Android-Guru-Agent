@@ -7,7 +7,7 @@ import com.apex.agent.core.engine.orchestrator.FakeLlmClient
 import com.apex.agent.core.engine.orchestrator.FakeToolExecutor
 import com.apex.agent.core.engine.orchestrator.FakeToolRegistry
 import kotlinx.coroutines.flow.toList
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -49,7 +49,7 @@ class EngineContinuePathResponseCompleteTest {
     )
 
     @Test
-    fun `muscle-memory bypass continue path emits ResponseComplete`() = runBlocking {
+    fun `muscle-memory bypass continue path emits ResponseComplete`() = runTest {
         val engine = newEngine(
             responses = emptyList(),
             mode = AgentMode.BUILD,
@@ -69,7 +69,7 @@ class EngineContinuePathResponseCompleteTest {
     }
 
     @Test
-    fun `promise nudge continue path emits ResponseComplete for the promised turn`() = runBlocking {
+    fun `promise nudge continue path emits ResponseComplete for the promised turn`() = runTest {
         val promiseText = "我现在去执行构建命令并运行全部测试，预计几分钟内完成。"
         val engine = newEngine(
             responses = listOf(
@@ -92,7 +92,7 @@ class EngineContinuePathResponseCompleteTest {
     }
 
     @Test
-    fun `goal continue path emits ResponseComplete before continuing`() = runBlocking {
+    fun `goal continue path emits ResponseComplete before continuing`() = runTest {
         val coordinator = GoalModeCoordinator(verifier = neverAchieved)
         coordinator.startGoal(
             GoalSpec(statement = "测试全绿", acceptanceCriteria = "全部测试通过", maxRounds = 2)

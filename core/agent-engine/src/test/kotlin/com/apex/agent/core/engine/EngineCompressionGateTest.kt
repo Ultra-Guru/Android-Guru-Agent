@@ -10,7 +10,7 @@ import com.apex.agent.core.engine.orchestrator.FakeToolRegistry
 import com.apex.agent.core.llm.LlmMessage
 import com.apex.agent.core.tools.catalog.ToolRequestBudget
 import kotlinx.coroutines.flow.toList
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -100,7 +100,7 @@ class EngineCompressionGateTest {
     // ═══ 2. 门限行为：history + headroom > threshold 触发 ═══
 
     @Test
-    fun `history under threshold alone does not compress`() = runBlocking {
+    fun `history under threshold alone does not compress`() = runTest {
         val compressor = FakeCompressor()
         val engine = newEngine(compressor)
         engine.conversationHistory.addAll(List(5) { userOfTokens(1000) })
@@ -111,7 +111,7 @@ class EngineCompressionGateTest {
     }
 
     @Test
-    fun `history under threshold but history plus headroom over threshold compresses`() = runBlocking {
+    fun `history under threshold but history plus headroom over threshold compresses`() = runTest {
         val compressor = FakeCompressor()
         val engine = newEngine(compressor)
         engine.conversationHistory.addAll(List(5) { userOfTokens(1000) })
@@ -125,7 +125,7 @@ class EngineCompressionGateTest {
     }
 
     @Test
-    fun `huge headroom clamped so 30 percent history does not compress`() = runBlocking {
+    fun `huge headroom clamped so 30 percent history does not compress`() = runTest {
         val compressor = FakeCompressor()
         val engine = newEngine(compressor)
         engine.conversationHistory.addAll(List(2) { userOfTokens(1200) })
@@ -136,7 +136,7 @@ class EngineCompressionGateTest {
     }
 
     @Test
-    fun `clamped headroom still fires above the 40 percent boundary`() = runBlocking {
+    fun `clamped headroom still fires above the 40 percent boundary`() = runTest {
         val compressor = FakeCompressor()
         val engine = newEngine(compressor)
         engine.conversationHistory.addAll(List(4) { userOfTokens(1200) })
@@ -149,7 +149,7 @@ class EngineCompressionGateTest {
     // ═══ 3. headroom 输入：首轮保守常量 → 上一轮快照接管 ═══
 
     @Test
-    fun `gate inputs fall back to conservative constants then track last round`() = runBlocking {
+    fun `gate inputs fall back to conservative constants then track last round`() = runTest {
         val engine = newEngine(FakeCompressor())
         // 首轮（无快照 / 无计划）：保守常量。
         assertEquals(
@@ -179,7 +179,7 @@ class EngineCompressionGateTest {
     // ═══ 4. execute() 真实调用链（小窗口 + 默认 headroom）═══
 
     @Test
-    fun `small window model triggers compression through execute`() = runBlocking {
+    fun `small window model triggers compression through execute`() = runTest {
         val compressor = FakeCompressor()
         val engine = ApexAgentEngine(
             llmClient = FakeLlmClient(
