@@ -317,6 +317,23 @@ interface TerminalRuntime {
     /** Read-only SemanticState for a recovered session (from persisted metadata). */
     suspend fun recoveredSnapshot(sessionId: Long): com.apex.agent.platform.terminal.state.TerminalSemanticState?
 
+    // ───────── memory pressure (#839) ─────────
+    /**
+     * #839：系统内存压力回调 —— 语义对齐 android.content.ComponentCallbacks2
+     * （level: 5=RUNNING_MODERATE / 10=RUNNING_LOW / 15=RUNNING_CRITICAL /
+     * 20=UI_HIDDEN / 40=BACKGROUND / 60=MODERATE / 80=COMPLETE）。
+     *
+     * level ≥ 10（TRIM_MEMORY_RUNNING_LOW）时驱逐 IDLE 会话（超出保留数的
+     * 最旧 READY/EXITED 会话，走与 close 相同的资源回收链）—— 每个会话 =
+     * ring buffer(256KB) + VT 引擎(native 堆) + 泵协程 + pty fd + shell/
+     * proot 进程，内存吃紧时 IDLE 会话是最安全的释放面。RUNNING 等在用
+     * 会话绝不驱逐。
+     *
+     * 非 suspend（调用方在主线程回调）：驱逐在 runtime 内部异步执行。
+     * 默认 no-op（additive：不破坏既有实现者，语义同 clipboardRequestsFlow）。
+     */
+    fun onTrimMemory(level: Int) {}
+
     // ───────── shutdown (T81 §15) ─────────
     // 停止新会话/新 job → cancel 全部 job（三级序列）→ 停 pump → close 全部
     // session（HUP→TERM→KILL 收敛 + bus/log drop）→ 停协程域 → nativeCloseAll

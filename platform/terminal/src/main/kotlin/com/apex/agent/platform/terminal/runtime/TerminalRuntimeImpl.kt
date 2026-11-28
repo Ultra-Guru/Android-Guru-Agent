@@ -697,6 +697,16 @@ class TerminalRuntimeImpl(
     override suspend fun recoveredSnapshot(sessionId: Long): com.apex.agent.platform.terminal.state.TerminalSemanticState? =
         recoveryService?.recoveredSnapshot(sessionId)
 
+    // ───────── memory pressure（#839）─────────
+    /**
+     * #839：委托 [SessionManagerImpl.onTrimMemory] —— IDLE 会话驱逐（RUNNING_LOW+
+     * 生效）。非 suspend（系统主线程回调）；驱逐在 SessionManager 的泵域异步执行，
+     * 有界且只关 IDLE 会话，不会阻塞回调线程。
+     */
+    override fun onTrimMemory(level: Int) {
+        sessionManager.onTrimMemory(level)
+    }
+
     // ───────── shutdown（T81 §15）─────────
     /**
      * 幂等收敛链：停新请求 → cancel 全部 job → close 全部 session（含 pump/bus/log

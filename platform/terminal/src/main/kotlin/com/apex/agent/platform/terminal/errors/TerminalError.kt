@@ -46,6 +46,13 @@ sealed class TerminalError(val code: String, val recoverable: Boolean) {
 
     /** Operation not supported in current state/config. */
     object UnsupportedOperation : TerminalError("UnsupportedOperation", recoverable = false)
+
+    /**
+     * #839: session registry is at its capacity cap and no IDLE session is evictable
+     * (every slot holds an in-use session). Close a session first, then retry —
+     * hence recoverable: the model can fix this on its own (close + recreate).
+     */
+    object SessionLimitReached : TerminalError("SessionLimitReached", recoverable = true)
 }
 
 /** Convenience Result type alias for Runtime APIs. */
@@ -94,6 +101,7 @@ fun Throwable.asTerminalError(): TerminalError? = when {
             "InvalidInput" -> TerminalError.InvalidInput
             "OwnerBusy" -> TerminalError.OwnerBusy
             "UnsupportedOperation" -> TerminalError.UnsupportedOperation
+            "SessionLimitReached" -> TerminalError.SessionLimitReached
             else -> null
         }
     }

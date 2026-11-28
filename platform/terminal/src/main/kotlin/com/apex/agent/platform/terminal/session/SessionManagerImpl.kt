@@ -4,6 +4,7 @@ import com.apex.agent.core.logging.AppLogger
 import com.apex.agent.core.logging.LogCategory
 import com.apex.agent.platform.terminal.buffer.RingTerminalBuffer
 import com.apex.agent.platform.terminal.errors.TerminalError
+import com.apex.agent.platform.terminal.errors.TerminalOperationException
 import com.apex.agent.platform.terminal.events.CloseCause
 import com.apex.agent.platform.terminal.events.Confidence
 import com.apex.agent.platform.terminal.events.ExitCause
@@ -109,6 +110,10 @@ class SessionManagerImpl(
         shell: String, cwd: String, rows: Int, cols: Int,
         env: Map<String, String>, privilege: PrivilegeLevel
     ): Result<TerminalSession> = mutex.withLock {
+        // #839：容量门禁（fork 前）—— 满额时先驱逐最旧 IDLE 会话腾位，无 IDLE
+        // 可驱逐则结构化报错（拒 fork，不烧 native 资源）。
+        val capFailure = enforceCapacityLocked()
+        if (capFailure != null) return@withLock capFailure
         // 1. forkpty（旧路径：单 shell + env 数组；与朴素 shell 后端的 prepare
         //    产出的 argv 路径在 C++ 层逐字节等价 —— T73 统一路由后仅作兼容入口保留）
         val envArray = env.map { "${it.key}=${it.value}" }.toTypedArray()
@@ -137,6 +142,9 @@ class SessionManagerImpl(
         if (spec.argv.isEmpty()) {
             return@withLock Result.failure(RuntimeException("TerminalError:InvalidInput — empty argv"))
         }
+        // #839：容量门禁（fork 前）—— 同 create()：满额驱逐 IDLE，无则结构化报错。
+        val capFailure = enforceCapacityLocked()
+        if (capFailure != null) return@withLock capFailure
         val nativeId = native.nativeCreateSessionArgv(
             spec.argv, spec.cwd, rows, cols, spec.env
         )
@@ -282,15 +290,31 @@ class SessionManagerImpl(
     }
 
     override suspend fun close(id: Long, force: Boolean): Result<Unit> = mutex.withLock {
+        closeLocked(id, force)
+    }
+
+    /**
+     * #839 + T81 (D-4)：close 的持锁主体。调用方必须已持 [mutex]
+     * （mutex 非重入，绝不能在持锁内再调 [close]）。除显式 close 外，容量
+     * 驱逐（create 满额腾位）与 onTrimMemory 驱逐共用本路径 —— 全套回收
+     * 语义（信号梯度、pump 停止、CLOSED 迁移、SessionClosed 事件、资源回收）
+     * 与用户手动 close 完全一致，UI/Agent 侧观察无差异。
+     *
+     * 注意：被驱逐会话的 runtime 级簿记（workspace/rootfs 解绑、持久化记录
+     * 删除）与自然退出宽限回收（S14）路径一致 —— 也不走 TerminalRuntime.close，
+     * 行为对齐既有架构：持久化记录保留为恢复视图（下次启动 recover() 可见，
+     * 可被显式 close 清理）。
+     */
+    private suspend fun closeLocked(id: Long, force: Boolean): Result<Unit> {
         // T81 (D-4)：幂等 + 持锁。原实现不持 mutex —— 两个并发 close 都能通过
         // 前置检查，重复 SIGHUP/nativeCloseSession/双发 SessionClosed；且
         // assemblies 移除后第二次 close 返回 SessionNotFound 失败（非幂等）。
         val a = assemblies[id]
         if (a == null) {
             // 已关闭（assembly 已移除）—— 幂等成功（与 Runtime 层 ALREADY_CLOSED 语义对齐）
-            return@withLock Result.success(Unit)
+            return Result.success(Unit)
         }
-        if (stateFlows[id]?.value == SessionState.CLOSED) return@withLock Result.success(Unit)
+        if (stateFlows[id]?.value == SessionState.CLOSED) return Result.success(Unit)
         // T81：BROKEN 原因必须在 transition(CLOSED) 之前捕获 —— 原实现在迁移后
         // 检查（此刻恒为 CLOSED），CloseCause.BROKEN 永远不可能产出（死代码）。
         val wasBroken = stateFlows[id]?.value == SessionState.BROKEN
@@ -313,7 +337,98 @@ class SessionManagerImpl(
         }
         emitSessionClosed(id, cause)
         reclaimAssembly(id, a)
-        return@withLock Result.success(Unit)
+        return Result.success(Unit)
+    }
+
+    /**
+     * #839（P2）：容量门禁 —— 满额时驱逐最旧 IDLE 会话腾位，无可驱逐则返回
+     * 结构化失败（SessionLimitReached）。调用方必须已持 [mutex]。
+     *
+     * 驱逐候选（LRU）：“IDLE”在本状态模型里 = READY（shell 存活、无前台作业
+     * —— 输入等待/运行中/中断恢复中都在用，绝不碰）与 EXITED（进程已死，
+     * 处于宽限回收窗口 —— 驱逐只是提前结束宽限）。同序位取 id 小者（id 单调
+     * = 创建序，等价最旧）。EXITED 优先于 READY：先杀已死的，绝不误伤活 shell。
+     *
+     * @return null = 有容量可用（含驱逐成功腾位后的情形）；非 null = 满额且
+     * 无可驱逐会话，结构化失败（调用方直接透传）。
+     */
+    private suspend fun enforceCapacityLocked(): Result<TerminalSession>? {
+        if (assemblies.size < MAX_SESSIONS) return null
+        val victim = oldestEvictableLocked()
+            ?: return Result.failure(
+                TerminalOperationException(
+                    TerminalError.SessionLimitReached,
+                    "已达会话上限 $MAX_SESSIONS（$assemblies.size 个会话全部在用，无 IDLE 可驱逐）" +
+                        "—— 先关闭一个会话再创建（TerminalClose），或等运行中的会话结束"
+                )
+            )
+        val victimState = stateFlows[victim]?.value
+        closeLocked(victim, force = false)
+        AppLogger.instance.warn(
+            LogCategory.TERMINAL, "SessionManager",
+            "Session cap ($MAX_SESSIONS) reached: evicted oldest IDLE session " +
+                "$victim (state=${victimState?.name}) to make room for a new session"
+        )
+        return null
+    }
+
+    /** #839：选出最旧的可驱逐会话（EXITED 优先，同序位取小 id）。必须已持 [mutex]。 */
+    private fun oldestEvictableLocked(): Long? {
+        var bestId: Long? = null
+        var bestRank = Int.MAX_VALUE
+        for (id in assemblies.keys) {
+            val rank = when (stateFlows[id]?.value) {
+                SessionState.EXITED -> 0   // 已死，仅剩宽限回收窗口 —— 最优先驱逐
+                SessionState.READY -> 1    // 空闲 shell，无前台作业 —— 安全驱逐面
+                else -> continue          // 在用（RUNNING/WAITING_INPUT/…）或异常态 —— 不碰
+            }
+            if (rank < bestRank || (rank == bestRank && bestId != null && id < bestId)) {
+                bestRank = rank
+                bestId = id
+            }
+        }
+        return bestId
+    }
+
+    /**
+     * #839：系统内存压力回调。level 语义 = android.content.ComponentCallbacks2
+     * （10=TRIM_MEMORY_RUNNING_LOW，15=RUNNING_CRITICAL，40/60/80 后台梯度）。
+     * ≥ RUNNING_LOW 时驱逐超出保留数（[TRIM_KEEP_IDLE_SESSIONS]）的 IDLE 会话
+     * （选驱策略同容量门禁：EXITED 优先、最旧优先）；在用会话绝不驱逐。
+     *
+     * 非 suspend（ApexCoreService 的 onTrimMemory 在主线程）—— 驱逐在 [scope]
+     * 异步执行，有界（只关 IDLE 会话）。
+     *
+     * @return true = 已调度驱逐；false = 压力级别不足（或无会话），无动作
+     */
+    fun onTrimMemory(level: Int): Boolean {
+        if (level < TRIM_MEMORY_RUNNING_LOW) return false
+        scope.launch {
+            var evicted = 0
+            mutex.withLock {
+                // 排序：驱逐优先级 EXITED < READY（rank 升序），同 rank 取小 id（最旧）。
+                val idle = assemblies.keys.mapNotNull { id ->
+                    when (stateFlows[id]?.value) {
+                        SessionState.EXITED -> 0 to id
+                        SessionState.READY -> 1 to id
+                        else -> null
+                    }
+                }.sortedWith(compareBy({ it.first }, { it.second }))
+                val excess = idle.size - TRIM_KEEP_IDLE_SESSIONS
+                for (i in 0 until excess.coerceAtMost(idle.size)) {
+                    closeLocked(idle[i].second, force = false)
+                    evicted++
+                }
+            }
+            if (evicted > 0) {
+                AppLogger.instance.warn(
+                    LogCategory.TERMINAL, "SessionManager",
+                    "onTrimMemory(level=$level): evicted $evicted IDLE session(s) " +
+                        "beyond keep-count $TRIM_KEEP_IDLE_SESSIONS"
+                )
+            }
+        }
+        return true
     }
 
     /** 发射 SessionClosed 终事件（close 与 EXITED 回收共用的发射序列）。 */
@@ -535,6 +650,30 @@ class SessionManagerImpl(
 
     companion object {
         private const val EXIT_POLL_MS = 100L
+
+        /**
+         * #839（P2）：会话数量上限。每个会话 = ring buffer(256KB) + VT 引擎
+         * （C++ 屏幕环/样式表，数百 KB native 堆）+ 泵协程 + native pty fd +
+         * proot/bash 进程 —— 无上限的 map 在常驻服务里是内存/进程双泄漏面
+         * （每 16 个会话 ≈ 4MB+ 缓冲区 + 16 个 proot 进程）。16 = 4 个
+         * workspace × 每区 4 并发会话的常见上界，同时给 2GB 设备留出安全余量。
+         */
+        const val MAX_SESSIONS = 16
+
+        /**
+         * #839：onTrimMemory 的 IDLE 保留数 —— 内存吃紧时保留最新的少量 IDLE
+         * 会话（用户切回终端/Agent 续用），只驱逐超出部分。0 = 驱逐全部 IDLE；
+         * 4 与 MAX_SESSIONS 的 1/4 对齐（常见活跃 workspace 数）。
+         */
+        const val TRIM_KEEP_IDLE_SESSIONS = 4
+
+        /**
+         * #839：onTrimMemory 生效阈值 = android.content.ComponentCallbacks2
+         * .TRIM_MEMORY_RUNNING_LOW。用字面量而非框架常量：platform/terminal 是
+         * 纯 JVM 库边界，不该引 android 依赖。5（RUNNING_MODERATE）以下无动作，
+         * 10/15/40/60/80 全梯度生效。
+         */
+        const val TRIM_MEMORY_RUNNING_LOW = 10
 
         /**
          * v3（S14）：shell 自然退出（EXITED）后的资源回收宽限期。

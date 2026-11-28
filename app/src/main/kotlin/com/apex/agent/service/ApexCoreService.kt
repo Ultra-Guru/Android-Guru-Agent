@@ -218,10 +218,14 @@ class ApexCoreService : LifecycleService() {
         super.onDestroy()
     }
 
-    /** 系统内存压力回调：转发给浏览器引擎做缓存清理与 Cookie 落盘（P2 #15） */
+    /** 系统内存压力回调：转发给浏览器引擎做缓存清理与 Cookie 落盘（P2 #15）。
+     *  #839：终端子系统同收压力 —— IDLE 会话驱逐（RUNNING_LOW+ 生效，
+     *  每个 IDLE 会话 = 256KB ring buffer + VT 引擎 + 泵协程 + pty fd +
+     *  proot 进程，内存吃紧时最安全的释放面）。 */
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
         runCatching { browserEngine.onTrimMemory(level) }
+        runCatching { terminalRuntime.onTrimMemory(level) }
     }
 
     private fun createNotificationChannel() {
