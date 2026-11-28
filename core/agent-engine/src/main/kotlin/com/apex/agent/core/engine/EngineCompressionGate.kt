@@ -103,6 +103,6 @@ internal fun estimateRequestOverhead(
 ): Int {
     val promptTokens = (messages.firstOrNull() as? LlmMessage.System)
         ?.let { TokenEstimator.estimateText(it.content) } ?: 0
-    val toolsBytes = tools.sumOf { it.name.length + it.description.length + it.parametersSchema.length }
+    val toolsBytes = tools.sumOf { it.name.length + it.description.length + it.parameters.length }
     return promptTokens + toolsBytes / 4
 }
