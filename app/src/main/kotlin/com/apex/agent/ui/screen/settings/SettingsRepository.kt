@@ -16,6 +16,8 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import javax.inject.Inject
@@ -33,6 +35,9 @@ import javax.inject.Singleton
  *
  * 首次启动注入内置 Provider + 默认 Profile，并把旧版散装 Key（llm_base_url 等）
  * 迁移为一个 Custom Profile，保证老用户配置不丢。
+ *
+ * #853：内存态不再只在进程启动时加载一次 —— [reloadFromDisk] 供备份导入
+ * 完成后热回灌（同一加载路径），防止陈旧快照覆写刚导入的配置。
  */
 @Singleton
 class SettingsRepository @Inject constructor(
@@ -116,6 +121,20 @@ class SettingsRepository @Inject constructor(
         }
     }
 
+    /**
+     * 本轮解析成功的域从损坏登记表摘除（#853：导入备份把损坏域修复后，
+     * 首页损坏横幅即时消退、该域写回重新可用）。键从未登记过则为纯空操作。
+     */
+    private fun onDomainRecovered(key: String) {
+        if (corruptKeys.remove(key)) {
+            _dataCorruption.value = corruptKeys.toList()
+            AppLogger.instance.info(
+                LogCategory.SYSTEM, "SettingsRepository",
+                "配置域已恢复，撤销损坏横幅并重新启用写回：$key"
+            )
+        }
+    }
+
     init {
         // 所有状态流声明完成后，统一执行加载 / 种子 / 迁移。
         // B0-BUG-01/06 写盘纪律：只在「首次种子（键不存在）」或「迁移发生」
@@ -126,15 +145,7 @@ class SettingsRepository @Inject constructor(
         val freshRoles = !prefs.contains(KEY_ROLES)
         val freshAgent = !prefs.contains(KEY_AGENT)
 
-        var provs = readProviders() ?: ModelProfileDefaults.builtInProviders
-        var profs = (readProfiles(provs) ?: ModelProfileDefaults.defaultProfiles(provs)).toMutableList()
-        provs = migrateAndHydrateApiKeys(provs)
-        val legacyMigrated = migrateLegacyConfig(profs, provs) { newProvs -> provs = newProvs }
-        provs = migrateAndHydrateApiKeys(provs)
-        _providers.value = provs
-        _profiles.value = profs
-        _roles.value = readRoles(profs) ?: ModelProfileDefaults.defaultRoles(profs)
-        _agentSettings.value = readAgentSettings()
+        val legacyMigrated = loadFromDisk()
 
         // B0-BUG-02:迁移完成的旧版本用户补一次旧散装键清扫(旧实现迁移后
         // 只置标记不删键,明文 Key 永久留在 apex_settings)。
@@ -144,6 +155,70 @@ class SettingsRepository @Inject constructor(
         if (freshProfiles || legacyMigrated) persistProfiles()
         if (freshRoles || legacyMigrated) persistRoles()
         if (freshAgent || legacyMigrated) persistAgentSettings()
+    }
+
+    /** #853：串行化并发的 [reloadFromDisk]（连续导入 / 重入保护）。 */
+    private val reloadMutex = Mutex()
+
+    /**
+     * #853 备份恢复热回灌：重读磁盘上同一份 4 键并整体刷新内存 StateFlow。
+     *
+     * 背景：BackupManager.import 只写 SharedPreferences —— 本仓库内存态
+     * 原先只在进程启动时加载一次，恢复后用户**编辑任意一项设置**都会触发
+     * persist* 系列把陈旧内存快照整体写回（persistProviders 尤其会抹掉刚
+     * 导入的 Provider 列表）。导入完成后立即调用本方法回灌内存态，恢复
+     * 即时生效，无需重启、也不再需要「重启才完全生效」的用户提示。
+     *
+     * 与 init 的对齐与差异：
+     *  - 与 init 共用 [loadFromDisk] 同一加载路径（含守卫迁移，见其 KDoc）；
+     *  - **不落盘**：reload 的前置契约是 4 键刚被导入写入（键必然存在），
+     *    init 的「首次种子补写四键」不适用，写盘纪律（见 init）禁止无谓回写；
+     *  - 本轮解析成功的域会从损坏登记表（B0-BUG-01 横幅数据源）中摘除 ——
+     *    「导入备份修复损坏域」后横幅即时消退。
+     *
+     * 线程模型：suspend 但内部不切调度器（SP 读为同进程内存一致；首次触达
+     * securePrefs 时 EncryptedSharedPreferences 初始化较慢，调用方
+     * BackupManager.import 已在 Dispatchers.IO 上）；[reloadMutex] 串行化
+     * 并发 reload。常规增改（upsert / delete / persist）保持既有约定
+     * （UI 主线程调用），不纳入本锁 —— reload 与用户编辑的交错窗口由导入
+     * 流程的 importing 态（按钮全禁用）挡住。
+     */
+    suspend fun reloadFromDisk() {
+        reloadMutex.withLock {
+            loadFromDisk()
+        }
+        AppLogger.instance.info(
+            LogCategory.SYSTEM, "SettingsRepository",
+            "备份恢复热回灌：设置内存态已从磁盘重读" +
+                "（providers=${_providers.value.size}, profiles=${_profiles.value.size}）"
+        )
+    }
+
+    /**
+     * 从 SharedPreferences 重读 4 个持久化键 → 守卫迁移 → 回灌全部内存
+     * StateFlow。init（首启加载）与 [reloadFromDisk]（备份恢复回灌）共用
+     * 同一加载路径，行为完全一致。
+     *
+     * 迁移全部幂等 / 键存在性守卫，二次调用零副作用（reload 可安全复用）：
+     *  - [migrateLegacyConfig]：llm_api_key 旧散装键不存在或 legacy_migrated_v2
+     *    标记已置位即短路（备份文件不含旧散装键，导入后必走短路分支）；
+     *  - [migrateAndHydrateApiKeys]：明文 Key → 加密区迁移只对仍带明文 apiKeys
+     *    的 Provider 生效（BackupManager 导入写回前已强制脱敏为空数组），
+     *    随后从加密区回填 —— 对无 Key Provider 是纯读，幂等。
+     *
+     * @return 旧散装配置本轮是否发生迁移（init 依此决定是否补写四键种子）。
+     */
+    private fun loadFromDisk(): Boolean {
+        var provs = readProviders() ?: ModelProfileDefaults.builtInProviders
+        val profs = (readProfiles(provs) ?: ModelProfileDefaults.defaultProfiles(provs)).toMutableList()
+        provs = migrateAndHydrateApiKeys(provs)
+        val legacyMigrated = migrateLegacyConfig(profs, provs) { newProvs -> provs = newProvs }
+        provs = migrateAndHydrateApiKeys(provs)
+        _providers.value = provs
+        _profiles.value = profs
+        _roles.value = readRoles(profs) ?: ModelProfileDefaults.defaultRoles(profs)
+        _agentSettings.value = readAgentSettings()
+        return legacyMigrated
     }
 
     // ── 查询辅助 ───────────────────────────────────────────────
@@ -328,29 +403,30 @@ class SettingsRepository @Inject constructor(
     // ── 加载 / 种子 / 迁移 ──────────────────────────────────────
     private fun readProviders(): List<ProviderConfig>? {
         val raw = prefs.getString(KEY_PROVIDERS, null) ?: return null
-        return runCatching { json.decodeFromString<List<ProviderConfig>>(raw) }.getOrNull()
-            .also { if (it == null) onCorrupt(KEY_PROVIDERS, raw) }
+        val parsed = runCatching { json.decodeFromString<List<ProviderConfig>>(raw) }.getOrNull()
+        if (parsed == null) onCorrupt(KEY_PROVIDERS, raw) else onDomainRecovered(KEY_PROVIDERS)
+        return parsed
     }
 
     private fun readProfiles(providers: List<ProviderConfig>): List<ModelProfile>? {
         val raw = prefs.getString(KEY_PROFILES, null) ?: return null
         val parsed = runCatching { json.decodeFromString<List<ModelProfile>>(raw) }.getOrNull()
-        if (parsed == null) onCorrupt(KEY_PROFILES, raw)
-        return parsed ?: ModelProfileDefaults.defaultProfiles(providers)
+        if (parsed == null) onCorrupt(KEY_PROFILES, raw) else onDomainRecovered(KEY_PROFILES)
+        return parsed
     }
 
     private fun readRoles(profiles: List<ModelProfile>): ModelRoleConfig? {
         val raw = prefs.getString(KEY_ROLES, null) ?: return null
         val parsed = runCatching { json.decodeFromString<ModelRoleConfig>(raw) }.getOrNull()
-        if (parsed == null) onCorrupt(KEY_ROLES, raw)
-        return parsed ?: ModelProfileDefaults.defaultRoles(profiles)
+        if (parsed == null) onCorrupt(KEY_ROLES, raw) else onDomainRecovered(KEY_ROLES)
+        return parsed
     }
 
     private fun readAgentSettings(): AgentSettings {
         val raw = prefs.getString(KEY_AGENT, null)
         if (raw != null) {
             val parsed = runCatching { json.decodeFromString<AgentSettings>(raw) }.getOrNull()
-            if (parsed == null) onCorrupt(KEY_AGENT, raw)
+            if (parsed == null) onCorrupt(KEY_AGENT, raw) else onDomainRecovered(KEY_AGENT)
             parsed?.let { return migratePermissionDefaultBypass(it) }
         }
         // 兼容旧版散装 Key（仅保留仍在消费的 keepAlive；Agent 模式散装键

@@ -50,7 +50,8 @@
     <string name="backup_export_success">备份已导出</string>
     <string name="backup_export_failed_fmt">导出失败：%1$s</string>
     <string name="backup_result_settings_ok">设置已恢复</string>
-    <string name="backup_result_settings_restart">重启应用后恢复的设置才会完全生效</string>
+    <string name="backup_result_settings_applied">已立即生效，无需重启</string>
+    <string name="backup_result_settings_reload_failed">设置已写入但即时生效失败 —— 为防覆盖刚恢复的数据，请重启应用后再编辑设置</string>
     <string name="backup_result_vault_ok">金库已恢复</string>
     <string name="backup_result_vault_passphrase_missing">需要金库口令</string>
     <string name="backup_result_vault_decrypt_failed">金库解密失败 —— 口令错误或数据损坏</string>

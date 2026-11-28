@@ -7,10 +7,12 @@ import android.util.Base64
 import com.apex.agent.BuildConfig
 import com.apex.agent.core.logging.AppLogger
 import com.apex.agent.core.logging.LogCategory
+import com.apex.agent.ui.screen.settings.SettingsRepository
 import com.apex.agent.vault.VaultEntryListSerializer
 import com.apex.agent.vault.VaultJson
 import com.apex.agent.vault.VaultRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -232,25 +234,37 @@ data class ImportResult(
  * [com.apex.agent.ui.screen.settings.SettingsRepository] 同名同键
  * （model_profiles_v2 / model_providers_v2 / model_roles_v2 /
  * agent_settings_v2）—— 这是本类有意依赖的存储契约而非私有实现细节；
- * 键名变更必须两侧同步。注意：SettingsRepository 的内存 StateFlow 在
- * 进程启动时加载，本类导入写回 SP **不会热更新其内存态** —— 设置项恢复
- * 需重启应用完全生效（由 UI 层明示用户）。
+ * 键名变更必须两侧同步。同进程内 SP 实例按名共享，import 写入（apply：
+ * 内存立即可见）后重读即可拿到新值。
+ *
+ * #853：导入写回 SP 后**立即调用 [SettingsRepository.reloadFromDisk]
+ * 热回灌内存态**（导入路径上不再要求重启：不回灌的话，恢复后的下一次
+ * 任意设置编辑会以陈旧内存快照整体写回，把刚导入的 Provider / Profile /
+ * 角色映射 / Agent 参数抹掉）。回灌失败不影响「已写入 SP」事实，记
+ * `settings_reload_failed` 提示用户重启 —— 内存态陈旧期内编辑仍有覆写风险，
+ * 提示重启比静默吞掉诚实。
  *
  * ## 线程模型
  *
- * 所有公开方法均为**同步阻塞 IO**（SP 读写 / SAF 流 / 密钥派生），方法
- * 内部不挂起也不切线程 —— 调用方（ViewModel）负责 Dispatchers.IO。
+ * import 为 suspend（含 SP 写入与重读 / 加密区回灌的磁盘 IO），其余
+ * 公开方法为同步阻塞 IO，方法内部不挂起也不切线程 —— 调用方（ViewModel）
+ * 负责 Dispatchers.IO。
  *
  * @param vaultRepository 金库仓库 —— 有意不直接注入 VaultStore 接口：仓库
  *   无 `@Binds` 绑定（ToolModule 手动构造 store 注入 repository），直接注入
  *   接口会在 Hilt 图校验时报错；且绕过 repository 的内存快照写 raw store
  *   会在下次 vault 写入时被陈旧快照覆盖。经 repository 走 save() 同步内存
  *   与磁盘，业务层边界也更正确（VaultStore KDoc 自述）。
+ * @param settingsRepository 设置中心仓库 —— #853：import 写回 SP 后经
+ *   [SettingsRepository.reloadFromDisk] 热回灌其内存态（不注入则恢复后
+ *   内存态陈旧，下一次任意设置编辑会把陈旧快照整体写回）。两个仓库均为
+ *   @Singleton 构造注入，无环（SettingsRepository 仅依赖 Context）。
  */
 @Singleton
 class BackupManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val vaultRepository: VaultRepository,
+    private val settingsRepository: SettingsRepository,
 ) {
     /** 与 SettingsRepository 同名同键的 SP 访问点（契约见类 KDoc）。 */
     private val prefs: SharedPreferences =
@@ -380,8 +394,10 @@ class BackupManager @Inject constructor(
      *    清空本机现有密钥。
      *
      * @param vaultPassphrase 仅在恢复 Vault 时使用；用毕清零由调用方负责。
+     * @throws CancellationException 调用方协程被取消时向上传播（已写入的
+     *   恢复内容不回滚，下次导入 / 重启重新对账）。
      */
-    fun import(
+    suspend fun import(
         json: String,
         restoreSettings: Boolean,
         restoreVault: Boolean,
@@ -415,6 +431,28 @@ class BackupManager @Inject constructor(
                 runCatching { prefs.edit().putString(key, safe).apply() }
                     .onSuccess { settingsImported = true }
                     .onFailure { errors += "$ERR_SETTINGS_WRITE_FAILED:$key" }
+            }
+
+            // #853：设置键已写入 SP —— 立即热回灌 SettingsRepository 内存态，
+            // 杜绝恢复后的下一次任意设置编辑把陈旧内存快照整体写回、抹掉
+            // 刚导入的 Provider / Profile / 角色映射 / Agent 参数（见类 KDoc）。
+            // 回灌失败不影响「已写入 SP」事实：记错误码提示用户重启（内存态
+            // 陈旧期内编辑仍有覆写风险，红线提示比静默吞掉诚实）。
+            if (settingsImported) {
+                try {
+                    settingsRepository.reloadFromDisk()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    errors += ERR_SETTINGS_RELOAD_FAILED
+                    AppLogger.instance.error(
+                        category = LogCategory.SYSTEM,
+                        source = "BackupManager",
+                        message = "settings reload after import failed: " +
+                            "${e.javaClass.simpleName}: ${e.message}",
+                        throwable = e,
+                    )
+                }
             }
         }
 
@@ -490,5 +528,9 @@ class BackupManager @Inject constructor(
         const val ERR_VAULT_WRITE_FAILED = "vault_write_failed"
         const val ERR_PROVIDERS_REDACT_FAILED = "providers_redact_failed"
         const val ERR_SETTINGS_WRITE_FAILED = "settings_write_failed"
+
+        /** #853：设置键已写 SP 但 SettingsRepository 内存态回灌失败 —— 提示
+         *  重启后再编辑（否则陈旧快照覆写风险仍在）。 */
+        const val ERR_SETTINGS_RELOAD_FAILED = "settings_reload_failed"
     }
 }
