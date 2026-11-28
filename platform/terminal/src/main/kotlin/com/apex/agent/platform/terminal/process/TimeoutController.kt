@@ -40,6 +40,21 @@ class TimeoutController(
     private val timers = java.util.concurrent.ConcurrentHashMap<Long, TimerEntry>()  // jobId → timer
 
     /**
+     * #947 — 已发起超时关停（SIGTERM 已发）的 job 集合。
+     *
+     * JobManager 的提示符启发式合成退出（WaitingInput(jobId=null) → RUNNING
+     * 前台 job → ProcessExited(NORMAL)）与超时通道的 ProcessExited(TIMEOUT)
+     * 存在竞态：TERM 杀掉命令后 shell 重绘提示符，启发式若先到会把 job 推成
+     * EXITED 并（经 transition 撤销定时器）吞掉超时语义——CI 高负载下
+     * T81JobTimeoutConvergenceTest 即由此翻红。TERM 发出即登记；定时器被
+     * 撤销/替换时清除（此时 job 要么已终态、要么换了新定时器，语义归新主）。
+     */
+    private val shutdownInitiated = java.util.concurrent.ConcurrentHashMap.newKeySet<Long>()
+
+    /** #947：该 job 的超时关停序列是否已发起（TERM 已发/在途）。 */
+    fun hasShutdownInitiated(jobId: Long): Boolean = shutdownInitiated.contains(jobId)
+
+    /**
      * Start a timeout timer for a job. On expiry: SIGTERM → wait grace → SIGKILL.
      * timer 协程被取消时（job 提前退出/正常完成）不再发任何信号。
      *
@@ -60,6 +75,9 @@ class TimeoutController(
         val job = scope.launch {
             try {
                 delay(timeoutMs)
+                // #947：TERM 发出前先登记关停已发起 —— 启发式通道从这一刻起
+                // 让位（TERM 在途时 shell 重绘的提示符不是「命令正常完成」）。
+                shutdownInitiated.add(jobId)
                 // Phase 1: graceful SIGTERM（发给进程组 —— native kill(-PGID)）
                 inputManager.sendSignal(sessionId, InputOwner.SYSTEM, UnixSignal.SIGTERM, jobId)
                 // Phase 2: grace period（timer 在此期间被取消 = job 已自行退出/被外部终止）
@@ -82,6 +100,8 @@ class TimeoutController(
     /** Cancel a timeout timer (e.g. job exited normally before timeout). */
     fun cancelTimeout(jobId: Long) {
         timers.remove(jobId)?.job?.cancel()
+        // #947：撤销即清关停标记 —— job 已终态（状态自守）或换新定时器（语义归新主）。
+        shutdownInitiated.remove(jobId)
     }
 
     /**
@@ -95,6 +115,7 @@ class TimeoutController(
             if (e.value.sessionId == sessionId) {
                 e.value.job.cancel()
                 iter.remove()
+                shutdownInitiated.remove(e.key)
             }
         }
     }
@@ -103,6 +124,7 @@ class TimeoutController(
     fun cancelAll() {
         timers.values.forEach { it.job.cancel() }
         timers.clear()
+        shutdownInitiated.clear()
     }
 
     /** T81：活跃定时器数（诊断/测试）。 */
